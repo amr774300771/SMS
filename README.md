@@ -95,7 +95,7 @@
 
 ## التحقق والبناء
 
-اجتازت 25 اختبار Flutter و16 اختبار Robolectric خاصاً بالتطبيق، ونجح `flutter analyze` دون ملاحظات. تشمل الاختبارات الجديدة تفعيل/تعطيل رد WhatsApp ومطابقة الاسم الفريد من قائمة الموثوقين ومعالجة البيع عبر callback دون SMS. تشمل الاختبارات السابقة جدولة البيع وإرجاع المخزون وعكس رصيد الآجل. لا يتوفر هاتف Android فعلي ضمن بيئة البناء؛ لذا لم يُختبر شكل إشعار WhatsApp الفعلي وزر الرد على الأجهزة المستهدفة، ويلزم التحقق على هاتف حقيقي وعلى إصدار WhatsApp المستخدم.
+نجح `flutter pub get` و`flutter analyze` بلا مشكلات، واجتاز `flutter test` عدد 33 اختباراً، كما اجتازت اختبارات Android/Robolectric عدد 29 حالة في GitHub Actions. بُني APK Release لـ `android-arm64` بنجاح في [تشغيل CI للإصدار 1.3.2+15](https://github.com/amr774300771/SMS/actions/runs/38967587051). لا يتوفر هاتف Android فعلي ضمن بيئة البناء؛ لذا لم يُختبر شكل إشعار WhatsApp الفعلي وزر الرد على هاتف مستهدف، ويلزم التحقق ميدانياً على إصدار WhatsApp والجهاز المستخدمين.
 
 المتطلبات: Flutter حديث، JDK 17 أو أحدث، وAndroid SDK 36.
 
@@ -105,7 +105,7 @@ flutter analyze
 flutter build apk --release --target-platform android-arm64 --android-skip-build-dependency-validation
 ```
 
-قبل إنشاء إصدار Release، أنشئ keystore خاصاً واضبط `signingConfigs.release` في `android/app/build.gradle`؛ لا تضع keystore أو كلمات مروره في ZIP أو مستودع عام.
+APK الناتج حالياً موقّع بمفتاح debug مؤقت من CI للاختبار والتثبيت الجديد فقط؛ لا تفترض إمكان تثبيته كتحديث فوق نسخة قائمة بتوقيع مختلف، ولا تحذف التطبيق الحالي لمجرد التجربة. قبل توزيع Release أو تحديث نسخة موجودة، أنشئ keystore تملكه واضبط `signingConfigs.release` في `android/app/build.gradle`؛ لا تضع keystore أو كلمات مروره في ZIP أو مستودع عام.
 
 ## ملاحظات توافق Android
 
