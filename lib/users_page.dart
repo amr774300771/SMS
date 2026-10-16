@@ -49,7 +49,7 @@ class _UsersPageState extends State<UsersPage> {
               TextField(controller: email, decoration: const InputDecoration(labelText: 'البريد الإلكتروني')),
               TextField(controller: password, obscureText: true, decoration: const InputDecoration(labelText: 'كلمة المرور (8 أحرف على الأقل)')),
               DropdownButtonFormField<String>(
-                value: role,
+                initialValue: role,
                 decoration: const InputDecoration(labelText: 'الدور'),
                 items: const [
                   DropdownMenuItem(value: 'manager', child: Text('مدير')),

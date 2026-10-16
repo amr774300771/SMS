@@ -50,7 +50,7 @@ class CloudSyncClient {
 
   Future<Map<String, dynamic>> pull({String? after}) async {
     _requireToken();
-    final query = <String, String>{if (after ?? cursor != null) 'after': after ?? cursor!};
+    final query = <String, String>{if (after != null || cursor != null) 'after': after ?? cursor!};
     final response = await client.get(baseUri.resolve('/v1/sync/pull').replace(queryParameters: query), headers: _headers);
     _check(response);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
