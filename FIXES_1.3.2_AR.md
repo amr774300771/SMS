@@ -29,16 +29,21 @@
 | الملف | التغيير |
 |---|---|
 | `.github/workflows/build-apk.yml` | تشغيل الاختبارات ثم بناء APK Release لـ arm64 ورفع artifact. |
+| `FIXES_1.3.2_AR.md` | هذا التقرير التفصيلي للإصلاحات والتحقق والتشغيل والقيود. |
 | `README.md` | الإصدار والميزات الجديدة ومدة Undo وأوامر البناء. |
 | `RELEASE_NOTES.md` | إضافة سجل 1.3.2+15 مع الإبقاء على السجل التاريخي. |
 | `pubspec.yaml` | الإصدار `1.3.2+15`. |
 | `lib/main.dart` | رئيسية وإعدادات ومخزون وحالات فارغة وUndo وخيار الدين وإصدار «حول». |
 | `lib/account_statement.dart` | حالة فراغ وفلاتر قابلة للمسح في كشف الحساب. |
+| `lib/manual_debt_dialog.dart` | تعبئة حوار الدين اليدوي بالعميل المحدد. |
 | `lib/native_api.dart` | استدعاء استعادة حذف الباقة. |
 | `lib/service_diagnostics_page.dart` | Skeleton وحالة الرد والصلاحيات وسجل الأحداث. |
 | `lib/skeleton_widgets.dart` | مكوّن تحميل Skeleton مشترك. |
+| `lib/sms_templates_page.dart` | استخدام تطبيع رقم اليمن عند تجهيز رسالة الترحيب اليدوية. |
+| `lib/whatsapp_utils.dart` | إنشاء رابط WhatsApp موحد بعد تطبيع رقم العميل. |
 | `android/app/src/main/kotlin/com/qadinet/cardbot/MainActivity.kt` | توصيل استعادة الحذف عبر MethodChannel. |
 | `android/app/src/main/kotlin/com/qadinet/cardbot/NativeStore.kt` | استعادة ذرية آمنة لتعريف الباقة والمخزون والصلاحيات. |
+| `android/app/src/main/kotlin/com/qadinet/cardbot/PhoneNumberNormalizer.kt` | تطبيع مركزي للأرقام اليمنية قبل فتح محرر SMS. |
 | `android/app/src/main/kotlin/com/qadinet/cardbot/WhatsAppNotificationListener.kt` | مساعد استخراج `RemoteInput` القابل للاختبار. |
 | `android/app/src/test/kotlin/com/qadinet/cardbot/WhatsAppAutoReplyTest.kt` | اختبار RemoteInput ونفاد المخزون والتعادل واستعادة الحذف مع الاختبارات السابقة. |
 | `test/card_management_widget_test.dart` | إخفاء رقم البطاقة وزر الإظهار ومدة Undo. |
@@ -81,4 +86,5 @@
 
 - APK Release الحالي مضبوط على توقيع Android debug المؤقت من CI للاختبار الجانبي فقط؛ لا تنشره تجارياً ولا تستخدمه كتحديث فوق تثبيت حالي دون تطابق التوقيع. يلزم keystore Release تملكه وتحتفظ به خارج المستودع لتوزيع تحديث متوافق.
 - رد WhatsApp آلية غير رسمية تعتمد على إجراءات الإشعار و`RemoteInput`، وليست WhatsApp Business Platform API. قد يتغير السلوك حسب إصدار Android/WhatsApp والشركة المصنّعة. يلزم اختبار ميداني ومراجعة أهلية ترخيص Syncfusion قبل الاستخدام التجاري.
-- لا يتوفر جهاز Android فعلي؛ يجب اختبار إشعار WhatsApp وزر الرد على الجهاز المستهدف قبل الاعتماد الإنتاجي. لم يُدمج التغيير في `main`.
+- لا يتوفر جهاز Android فعلي؛ يجب اختبار إشعار WhatsApp وزر الرد على الجهاز المستهدف قبل الاعتماد الإنتاجي.
+- [PR #1 للمراجعة](https://github.com/amr774300771/SMS/pull/1) مفتوح من الفرع المستقل؛ لم يُدمج في `main`.
