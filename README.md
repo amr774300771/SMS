@@ -95,7 +95,7 @@
 
 ## التحقق والبناء
 
-نجح `flutter pub get` و`flutter analyze` بلا مشكلات، واجتاز `flutter test` عدد 33 اختباراً، كما اجتازت اختبارات Android/Robolectric عدد 29 حالة في GitHub Actions. بُني APK Release لـ `android-arm64` بنجاح في [تشغيل CI للإصدار 1.3.2+15](https://github.com/amr774300771/SMS/actions/runs/38967587051). لا يتوفر هاتف Android فعلي ضمن بيئة البناء؛ لذا لم يُختبر شكل إشعار WhatsApp الفعلي وزر الرد على هاتف مستهدف، ويلزم التحقق ميدانياً على إصدار WhatsApp والجهاز المستخدمين.
+نجح `flutter pub get` و`flutter analyze` بلا مشكلات، واجتاز `flutter test` عدد 33 اختباراً، كما اجتازت اختبارات Android/Robolectric عدد 29 حالة في GitHub Actions. بُني APK Release لـ `android-arm64` بنجاح، شاملاً إصلاح إدارة كرت موجود في سجل البيع، في [تشغيل CI للإصدار 1.3.2+15](https://github.com/amr774300771/SMS/actions/runs/38972089326). لا يتوفر هاتف Android فعلي ضمن بيئة البناء؛ لذا لم يُختبر شكل إشعار WhatsApp الفعلي وزر الرد على هاتف مستهدف، ويلزم التحقق ميدانياً على إصدار WhatsApp والجهاز المستخدمين.
 
 المتطلبات: Flutter حديث، JDK 17 أو أحدث، وAndroid SDK 36.
 
