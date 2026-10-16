@@ -1,0 +1,109 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import pg from 'pg';
+import { randomUUID } from 'node:crypto';
+
+const { Pool } = pg;
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const app = express();
+app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }));
+app.use(express.json({ limit: '2mb' }));
+
+const jwtSecret = process.env.JWT_SECRET || 'development-only-change-me';
+const roles = new Set(['owner', 'manager', 'supervisor', 'seller', 'collector', 'viewer', 'support']);
+const permissions = {
+  owner: ['*'], manager: ['read', 'sell', 'inventory', 'clients', 'payments', 'reports', 'users'],
+  supervisor: ['read', 'sell', 'inventory', 'clients', 'payments', 'reports'],
+  seller: ['read', 'sell', 'clients'], collector: ['read', 'clients', 'payments'],
+  viewer: ['read', 'reports'], support: ['read', 'clients'],
+};
+const can = (user, permission) => permissions[user.role]?.includes('*') || permissions[user.role]?.includes(permission);
+
+function sign(user) {
+  return jwt.sign({ sub: user.id, org: user.organization_id, role: user.role }, jwtSecret, { expiresIn: '12h' });
+}
+async function auth(req, res, next) {
+  try {
+    const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+    if (!token) return res.status(401).json({ error: 'AUTH_REQUIRED' });
+    const claims = jwt.verify(token, jwtSecret);
+    const result = await pool.query('select id, organization_id, role, display_name from users where id=$1 and disabled_at is null', [claims.sub]);
+    if (!result.rowCount) return res.status(401).json({ error: 'USER_DISABLED' });
+    req.user = result.rows[0]; next();
+  } catch { res.status(401).json({ error: 'INVALID_TOKEN' }); }
+}
+function requirePermission(permission) { return (req, res, next) => can(req.user, permission) ? next() : res.status(403).json({ error: 'FORBIDDEN', permission }); }
+async function requireBranch(req, res, next) {
+  const branchId = req.body.branchId || req.query.branchId;
+  if (!branchId) return res.status(400).json({ error: 'BRANCH_REQUIRED' });
+  const result = await pool.query('select 1 from memberships m join branches b on b.id=m.branch_id where m.user_id=$1 and m.branch_id=$2 and b.organization_id=$3', [req.user.id, branchId, req.user.organization_id]);
+  if (!result.rowCount && req.user.role !== 'owner') return res.status(403).json({ error: 'BRANCH_FORBIDDEN' });
+  req.branchId = branchId; next();
+}
+
+app.get('/health', (_req, res) => res.json({ ok: true, service: 'qaidi-sync-api' }));
+app.post('/v1/auth/register', async (req, res) => {
+  const { organizationName, branchName = 'الفرع الرئيسي', email, password, displayName = 'المالك' } = req.body;
+  if (!organizationName || !email || !password || password.length < 8) return res.status(400).json({ error: 'INVALID_REGISTRATION' });
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    const org = (await client.query('insert into organizations(name) values($1) returning id', [organizationName])).rows[0];
+    const branch = (await client.query('insert into branches(organization_id,name) values($1,$2) returning id', [org.id, branchName])).rows[0];
+    const user = (await client.query('insert into users(organization_id,email,password_hash,display_name,role) values($1,$2,$3,$4,$5) returning id,organization_id,role,display_name', [org.id, email.toLowerCase(), await bcrypt.hash(password, 12), displayName, 'owner'])).rows[0];
+    await client.query('insert into memberships(user_id,branch_id) values($1,$2)', [user.id, branch.id]);
+    await client.query('commit');
+    res.status(201).json({ token: sign(user), user, branch });
+  } catch (e) { await client.query('rollback'); res.status(409).json({ error: 'REGISTRATION_FAILED', detail: e.code === '23505' ? 'EMAIL_EXISTS' : undefined }); } finally { client.release(); }
+});
+app.post('/v1/auth/login', async (req, res) => {
+  const userResult = await pool.query('select id,organization_id,role,display_name,password_hash from users where email=$1 and disabled_at is null', [String(req.body.email || '').toLowerCase()]);
+  const user = userResult.rows[0];
+  if (!user || !(await bcrypt.compare(req.body.password || '', user.password_hash))) return res.status(401).json({ error: 'INVALID_CREDENTIALS' });
+  delete user.password_hash; res.json({ token: sign(user), user });
+});
+app.get('/v1/me', auth, async (req, res) => res.json({ user: req.user, permissions: permissions[req.user.role] || [], branches: (await pool.query('select b.* from branches b join memberships m on m.branch_id=b.id where m.user_id=$1', [req.user.id])).rows }));
+
+app.get('/v1/sync/pull', auth, requireBranch, async (req, res) => {
+  const after = req.query.after || '1970-01-01T00:00:00Z';
+  const result = await pool.query('select id,entity,entity_id,operation,payload,device_id,user_id,created_at from sync_changes where organization_id=$1 and branch_id=$2 and created_at > $3 order by created_at,id limit 1000', [req.user.organization_id, req.branchId, after]);
+  res.json({ changes: result.rows, cursor: result.rows.at(-1)?.created_at || after, hasMore: result.rowCount === 1000 });
+});
+app.post('/v1/sync/push', auth, requirePermission('read'), requireBranch, async (req, res) => {
+  const changes = Array.isArray(req.body.changes) ? req.body.changes.slice(0, 1000) : [];
+  const client = await pool.connect(); const accepted = []; const rejected = [];
+  try {
+    await client.query('begin');
+    for (const change of changes) {
+      if (!change.id || !change.entity || !change.entityId || !change.operation) { rejected.push({ id: change.id, error: 'INVALID_CHANGE' }); continue; }
+      try {
+        await client.query('insert into sync_changes(id,organization_id,branch_id,entity,entity_id,operation,payload,device_id,user_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict (id) do nothing', [change.id, req.user.organization_id, req.branchId, change.entity, change.entityId, change.operation, change.payload || {}, change.deviceId || 'unknown', req.user.id]);
+        accepted.push(change.id);
+      } catch (e) { rejected.push({ id: change.id, error: e.code || 'PUSH_FAILED' }); }
+    }
+    await client.query('commit'); res.json({ accepted, rejected });
+  } catch (e) { await client.query('rollback'); res.status(500).json({ error: 'PUSH_FAILED' }); } finally { client.release(); }
+});
+
+app.post('/v1/sales', auth, requirePermission('sell'), async (req, res) => {
+  const { branchId, cardId, clientId, paymentMethod = 'credit', deviceId = 'unknown', idempotencyKey } = req.body;
+  if (!branchId || !cardId) return res.status(400).json({ error: 'CARD_REQUIRED' });
+  const db = await pool.connect();
+  try {
+    await db.query('begin');
+    const card = (await db.query('select c.*, p.price from cards c join packages p on p.id=c.package_id where c.id=$1 and c.branch_id=$2 for update', [cardId, branchId])).rows[0];
+    if (!card || card.status !== 'available') { await db.query('rollback'); return res.status(409).json({ error: 'CARD_UNAVAILABLE' }); }
+    const saleId = idempotencyKey || randomUUID();
+    const sale = (await db.query('insert into sales(id,organization_id,branch_id,client_id,card_id,package_id,amount,payment_method,created_by) values($1,$2,$3,$4,$5,$6,$7,$8,$9) on conflict (card_id) do nothing returning *', [saleId, req.user.organization_id, branchId, clientId || null, card.id, card.package_id, card.price, paymentMethod, req.user.id])).rows[0];
+    if (!sale) { await db.query('rollback'); return res.status(409).json({ error: 'CARD_ALREADY_SOLD' }); }
+    await db.query("update cards set status='sold',version=version+1,updated_at=now() where id=$1", [card.id]);
+    if (clientId && paymentMethod === 'credit') await db.query('insert into ledger_entries(organization_id,branch_id,client_id,kind,amount,source_id,created_by) values($1,$2,$3,$4,$5,$6,$7)', [req.user.organization_id, branchId, clientId, 'sale', card.price, sale.id, req.user.id]);
+    await db.query('insert into audit_logs(organization_id,branch_id,user_id,action,entity,entity_id,metadata) values($1,$2,$3,$4,$5,$6,$7)', [req.user.organization_id, branchId, req.user.id, 'sale', 'sale', sale.id, JSON.stringify({ cardId: card.id, deviceId })]);
+    await db.query('commit'); res.status(201).json({ sale, card: { ...card, status: 'sold' } });
+  } catch (e) { await db.query('rollback'); res.status(500).json({ error: 'SALE_FAILED' }); } finally { db.release(); }
+});
+
+app.listen(Number(process.env.PORT || 8080), () => console.log(`qaidi-sync-api listening on ${process.env.PORT || 8080}`));

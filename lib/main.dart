@@ -29,6 +29,7 @@ import 'service_diagnostics_page.dart';
 import 'whatsapp_utils.dart';
 import 'skeleton_widgets.dart';
 import 'report_metrics.dart';
+import 'cloud_sync_settings.dart';
 
 const emerald = Color(0xFF10B981),
     blue = Color(0xFF0284C7),
@@ -2805,6 +2806,16 @@ class SettingsPage extends StatelessWidget {
                 'تصدير ومشاركة نسخة كاملة من البيانات',
                 Icons.backup,
                 () => _backup(c),
+              ),
+              _settingTile(
+                c,
+                'المزامنة السحابية',
+                'تسجيل الدخول إلى خادم PostgreSQL/API ومزامنة الأجهزة',
+                Icons.cloud_sync_outlined,
+                () => Navigator.push(
+                  c,
+                  MaterialPageRoute(builder: (_) => const CloudSyncSettingsPage()),
+                ),
               ),
               _settingTile(
                 c,
