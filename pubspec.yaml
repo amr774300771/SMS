@@ -1,7 +1,7 @@
 name: cardbot_qaidi
 description: تطبيق القاضي نت لإدارة وبيع كروت الإنترنت عبر SMS.
 publish_to: none
-version: 1.3.2+15
+version: 1.3.3+16
 environment:
   sdk: '>=3.3.0 <4.0.0'
 dependencies:

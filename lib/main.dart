@@ -28,6 +28,7 @@ import 'sms_templates_page.dart';
 import 'service_diagnostics_page.dart';
 import 'whatsapp_utils.dart';
 import 'skeleton_widgets.dart';
+import 'report_metrics.dart';
 
 const emerald = Color(0xFF10B981),
     blue = Color(0xFF0284C7),
@@ -2512,69 +2513,76 @@ class _ClientsPageState extends State<ClientsPage> {
   }
 }
 
-class ReportsPage extends StatelessWidget {
+class ReportsPage extends StatefulWidget {
   final Map<String, dynamic> data;
   const ReportsPage({super.key, required this.data});
+
+  @override
+  State<ReportsPage> createState() => _ReportsPageState();
+}
+
+class _ReportsPageState extends State<ReportsPage> {
+  int periodDays = 0;
+
   @override
   Widget build(BuildContext c) {
-    final sales = _sales(data);
-    final today =
-        DateTime.now().toString().substring(0, 10).replaceAll('-', '');
-    final todaySales =
-        sales.where((s) => '${s['time']}'.startsWith(today)).toList();
-    final total = sales.fold<int>(
-      0,
-      (a, s) => a + (int.tryParse('${s['packageId']}') ?? 0),
-    );
-    final byPackage = <String, int>{};
-    for (final s in sales) {
-      byPackage['${s['packageId']}'] =
-          (byPackage['${s['packageId']}'] ?? 0) + 1;
-    }
+    final allSales = _sales(widget.data);
+    final sales = allSales
+        .where((s) => isInReportPeriod(s['time'], periodDays))
+        .toList();
+    final todaySales = allSales.where((s) => isInReportPeriod(s['time'], 1)).toList();
+    final total = sales.fold<int>(0, (a, s) => a + reportAmount(s));
+    final byPackage = salesByPackage(sales);
+    final inventory = _inventory(widget.data);
+    final stockTotal = inventory.values.fold<int>(0, (a, v) => a + _list(v).length);
+    final lowStock = _list(widget.data['lowStockWarnings']).length;
+    final debtorCount = _debts(widget.data)
+        .where((d) => (d['amount'] as num? ?? 0) > 0)
+        .length;
     return ListView(
       padding: const EdgeInsets.all(18),
       children: [
-        const Text(
-          'التقارير',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+        Row(
+          children: [
+            const Expanded(
+              child: Text('التقارير', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+            ),
+            PopupMenuButton<int>(
+              initialValue: periodDays,
+              tooltip: 'الفترة الزمنية',
+              onSelected: (value) => setState(() => periodDays = value),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 0, child: Text('كل الفترة')),
+                PopupMenuItem(value: 1, child: Text('اليوم')),
+                PopupMenuItem(value: 7, child: Text('آخر 7 أيام')),
+                PopupMenuItem(value: 30, child: Text('آخر 30 يوماً')),
+              ],
+              child: Chip(
+                avatar: const Icon(Icons.date_range, size: 18),
+                label: Text(reportPeriodLabel(periodDays)),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 14),
         if (sales.isEmpty)
-          const EmptyCard(
-              text:
-                  'لا توجد مبيعات لعرضها بعد. ستظهر الإحصاءات تلقائيًا بعد البيع.'),
+          const EmptyCard(text: 'لا توجد مبيعات في الفترة المحددة.'),
         Wrap(
           spacing: 9,
           runSpacing: 9,
           children: [
-            _statCard(
-              'إجمالي المبيعات',
-              '${sales.length}',
-              'عملية',
-              Icons.receipt,
-              emerald,
-            ),
-            _statCard(
-              'قيمة المبيعات',
-              _money(total),
-              'إجمالي السجل',
-              Icons.payments,
-              blue,
-            ),
-            _statCard(
-              'مبيعات اليوم',
-              '${todaySales.length}',
-              'عملية اليوم',
-              Icons.today,
-              Colors.orange,
-            ),
-            _statCard(
-              'عملاء لديهم دين',
-              '${_debts(data).where((d) => (d['amount'] as num? ?? 0) > 0).length}',
-              'حساب',
-              Icons.people,
-              Colors.purple,
-            ),
+            _statCard('إجمالي المبيعات', '${sales.length}', reportPeriodLabel(periodDays), Icons.receipt, emerald),
+            _statCard('قيمة المبيعات', _money(total), 'الفترة المحددة', Icons.payments, blue),
+            _statCard('مبيعات اليوم', '${todaySales.length}', 'كل اليوم', Icons.today, Colors.orange),
+            _statCard('عملاء لديهم دين', '$debtorCount', 'حساب', Icons.people, Colors.purple),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(child: _statCard('المخزون المتاح', '$stockTotal', 'كرت', Icons.inventory_2, emerald)),
+            const SizedBox(width: 10),
+            Expanded(child: _statCard('تنبيهات المخزون', '$lowStock', 'باقة منخفضة', Icons.warning_amber, Colors.deepOrange)),
           ],
         ),
         const SizedBox(height: 18),
@@ -2584,10 +2592,7 @@ class ReportsPage extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'المبيعات حسب الباقة',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
+                Text('المبيعات حسب الباقة — ${reportPeriodLabel(periodDays)}', style: const TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 18),
                 SizedBox(
                   height: 190,
@@ -2595,58 +2600,18 @@ class ReportsPage extends StatelessWidget {
                       ? const Center(child: Text('لا توجد بيانات كافية'))
                       : BarChart(
                           BarChartData(
-                            barGroups: byPackage.entries
-                                .toList()
-                                .asMap()
-                                .entries
-                                .map(
-                                  (e) => BarChartGroupData(
-                                    x: e.key,
-                                    barRods: [
-                                      BarChartRodData(
-                                        toY: e.value.value.toDouble(),
-                                        color: emerald,
-                                        width: 20,
-                                        borderRadius: BorderRadius.circular(5),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                                .toList(),
+                            barGroups: byPackage.entries.toList().asMap().entries.map((e) => BarChartGroupData(
+                              x: e.key,
+                              barRods: [BarChartRodData(toY: e.value.value.toDouble(), color: emerald, width: 20, borderRadius: BorderRadius.circular(5))],
+                            )).toList(),
                             titlesData: FlTitlesData(
-                              bottomTitles: AxisTitles(
-                                sideTitles: SideTitles(
-                                  showTitles: true,
-                                  getTitlesWidget: (x, _) {
-                                    final i = x.toInt();
-                                    return i >= 0 && i < byPackage.length
-                                        ? Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: 8,
-                                            ),
-                                            child: Text(
-                                              byPackage.keys.elementAt(i),
-                                              style: const TextStyle(
-                                                fontSize: 10,
-                                              ),
-                                            ),
-                                          )
-                                        : const SizedBox();
-                                  },
-                                ),
-                              ),
-                              leftTitles: const AxisTitles(
-                                sideTitles: SideTitles(
-                                  showTitles: true,
-                                  reservedSize: 28,
-                                ),
-                              ),
-                              topTitles: const AxisTitles(
-                                sideTitles: SideTitles(showTitles: false),
-                              ),
-                              rightTitles: const AxisTitles(
-                                sideTitles: SideTitles(showTitles: false),
-                              ),
+                              bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, getTitlesWidget: (x, _) {
+                                final i = x.toInt();
+                                return i >= 0 && i < byPackage.length ? Padding(padding: const EdgeInsets.only(top: 8), child: Text(byPackage.keys.elementAt(i), style: const TextStyle(fontSize: 10))) : const SizedBox();
+                              })),
+                              leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 28)),
+                              topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                              rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                             ),
                           ),
                         ),
@@ -2656,10 +2621,12 @@ class ReportsPage extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        FilledButton.icon(
-          onPressed: () => _shareReport(c, sales),
-          icon: const Icon(Icons.share),
-          label: const Text('مشاركة تقرير المبيعات'),
+        FilledButton.icon(onPressed: () => _shareReport(c, sales), icon: const Icon(Icons.share), label: const Text('مشاركة تقرير المبيعات')),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => Share.share(buildSalesCsv(sales), subject: 'CSV — تقرير مبيعات القاضي نت — ${reportPeriodLabel(periodDays)}'),
+          icon: const Icon(Icons.table_view_outlined),
+          label: const Text('تصدير CSV / فتح في تطبيق الجداول'),
         ),
       ],
     );
@@ -2893,12 +2860,12 @@ class SettingsPage extends StatelessWidget {
               _settingTile(
                 c,
                 'حول التطبيق',
-                'القاضي نت • الإصدار 1.3.2',
+                'القاضي نت • الإصدار 1.3.3',
                 Icons.info_outline,
                 () => showAboutDialog(
                   context: c,
                   applicationName: 'القاضي نت',
-                  applicationVersion: '1.3.2',
+                  applicationVersion: '1.3.3',
                   applicationLegalese: 'إدارة محلية لبيع كروت الإنترنت.',
                 ),
               ),
