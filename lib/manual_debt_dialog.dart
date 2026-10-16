@@ -21,9 +21,11 @@ class ManualDebtInput {
 Future<ManualDebtInput?> showManualDebtDialog({
   required BuildContext context,
   required int Function(String phone) balanceForPhone,
+  String? initialPhone,
+  String? initialName,
 }) async {
-  final phoneController = TextEditingController();
-  final nameController = TextEditingController();
+  final phoneController = TextEditingController(text: initialPhone ?? '');
+  final nameController = TextEditingController(text: initialName ?? '');
   final amountController = TextEditingController();
   final reasonController = TextEditingController();
   String? validationError;

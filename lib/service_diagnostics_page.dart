@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'native_api.dart';
+import 'skeleton_widgets.dart';
 
 class ServiceDiagnosticsPage extends StatefulWidget {
   final Map<String, dynamic> data;
@@ -60,7 +61,7 @@ class _ServiceDiagnosticsPageState extends State<ServiceDiagnosticsPage> {
             icon: const Icon(Icons.refresh))
       ]),
       body: loading && status.isEmpty
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppSkeleton(rows: 6)
           : ListView(padding: const EdgeInsets.all(16), children: [
               Card(
                 child: Padding(
@@ -74,17 +75,20 @@ class _ServiceDiagnosticsPageState extends State<ServiceDiagnosticsPage> {
                       ),
                       const SizedBox(height: 6),
                       const Text(
-                        'يحتاج إذن الوصول إلى الإشعارات وتفعيل الرد الآلي. يعمل على إشعارات المحادثات الفردية التي توفر زر رد مباشر؛ لا يرسل رسالة جديدة إلى محادثة عشوائية ولا يضمن الرد إذا أخفى WhatsApp زر الرد.',
+                        'يحتاج إذن الوصول إلى الإشعارات وتفعيل الرد الآلي. يعمل على إشعارات المحادثات الفردية التي توفر زر رد مباشر؛ لا يرسل رسالة جديدة إلى محادثة عشوائية. إذا تعذر تنفيذ الرد، يعاد المحاولة بالإيصال نفسه دون صرف كرت آخر.',
                       ),
                       const SizedBox(height: 10),
                       OutlinedButton.icon(
                         onPressed: () async {
                           try {
-                            await NativeApi.instance.openWhatsAppNotificationSettings();
+                            await NativeApi.instance
+                                .openWhatsAppNotificationSettings();
                           } catch (error) {
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('تعذر فتح إعدادات الإشعارات: $error')),
+                                SnackBar(
+                                    content: Text(
+                                        'تعذر فتح إعدادات الإشعارات: $error')),
                               );
                             }
                           }
@@ -152,12 +156,12 @@ class _ServiceDiagnosticsPageState extends State<ServiceDiagnosticsPage> {
               const Divider(),
               const Text('أحدث الأحداث',
                   style: TextStyle(fontWeight: FontWeight.bold)),
-              ...events.take(40).map((event) => ListTile(
+              ...events.take(20).map((event) => ListTile(
                     dense: true,
                     leading: const Icon(Icons.event_note),
                     title: Text(_label('${event['reason'] ?? ''}')),
                     subtitle: Text(
-                        '${event['time'] ?? ''} • ${event['phone'] ?? ''}${'${event['detail'] ?? ''}'.isEmpty ? '' : ' • ${event['detail']}'}'),
+                        '${event['time'] ?? ''}${'${event['detail'] ?? ''}'.isEmpty ? '' : ' • ${event['detail']}'}'),
                   )),
             ]),
     );
@@ -176,6 +180,10 @@ class _ServiceDiagnosticsPageState extends State<ServiceDiagnosticsPage> {
         'sale_sms_failed' => 'بيع ناجح مع فشل إرسال SMS',
         'sale_whatsapp_failed' => 'بيع ناجح مع فشل رد WhatsApp',
         'whatsapp_reply_failed' => 'تعذر الرد من إشعار WhatsApp',
+        'whatsapp_rate_limited' => 'تجاوز حد الردود المؤقت؛ ستُعاد المحاولة',
+        'whatsapp_reply_recovered' =>
+          'مرّر Android رد البيع المسجل إلى WhatsApp',
+        'ambiguous_keyword' => 'تطابق الطلب مع أكثر من باقة؛ لم يُصرف كرت',
         'sms_send_failed' => 'فشل إرسال الرسالة',
         'out_of_stock' => 'نفاد المخزون',
         'rejected' => 'رفض بسبب صلاحية أو حد',

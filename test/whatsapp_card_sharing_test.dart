@@ -93,9 +93,9 @@ void main() {
     expect(sellArguments!['phone'], '777123456');
     expect(sellArguments!['sendSms'], isFalse);
     expect(refreshCalled, isTrue);
-    expect(openedUri?.scheme, 'whatsapp');
-    expect(openedUri?.host, 'send');
-    expect(openedUri?.queryParameters['phone'], '967777123456');
+    expect(openedUri?.scheme, 'https');
+    expect(openedUri?.host, 'wa.me');
+    expect(openedUri?.pathSegments, ['967777123456']);
     expect(openedUri?.queryParameters['text'], contains('CARD-500-ABC'));
     expect(openedUri?.queryParameters['text'], contains('500'));
     expect(openedUri?.queryParameters['text'], contains('عميل الاختبار'));
@@ -160,7 +160,8 @@ void main() {
     await tester.pumpAndSettle();
 
     final saleCall = calls.firstWhere((call) => call.method == 'sell');
-    final smsCall = calls.firstWhere((call) => call.method == 'openSmsComposer');
+    final smsCall =
+        calls.firstWhere((call) => call.method == 'openSmsComposer');
     final saleArgs = Map<String, dynamic>.from(saleCall.arguments as Map);
     final smsArgs = Map<String, dynamic>.from(smsCall.arguments as Map);
     expect(saleArgs['sendSms'], isFalse);

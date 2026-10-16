@@ -237,25 +237,63 @@ class PackagePersistenceTest {
     }
 
     @Test
-    fun bulkInventoryRejectsHistoricalSoldCardsAndDuplicateReplacementWithoutChangingStock() {
+    fun returnedHistoricalSaleCardCanBeEditedMovedAndDeletedWithoutChangingSalesHistory() {
         NativeStore.initialize(context, defaults)
         val directory = File(context.filesDir, "CardBot")
         File(directory, "cards_500.txt").writeText("AVAILABLE\nSOLD-CARD\n")
-        File(directory, "sales.log").writeText("20261010-010000 | 500 | 700000000 | SOLD-CARD | 0\n")
+        val salesFile = File(directory, "sales.log")
+        val historicalSale = "20261010-010000 | 500 | 700000000 | SOLD-CARD | 0\n"
+        salesFile.writeText(historicalSale)
+
+        val packages = JSONObject(defaults.getValue("packages.json"))
+        packages.getJSONArray("packages").put(
+            JSONObject().put("id", "600").put("price", 600).put("label", "600")
+                .put("keywords", JSONArray().put("600"))
+        )
+        NativeStore.saveConfig(context, "packages.json", packages.toString())
+
+        var snapshot = NativeStore.updateInventory(
+            context,
+            JSONArray().put(
+                JSONObject().put("action", "edit").put("packageId", "500")
+                    .put("card", "SOLD-CARD").put("newCard", "RETURNED-CARD")
+            ).toString()
+        )
+        assertEquals(listOf("AVAILABLE", "RETURNED-CARD"), (snapshot["inventory"] as Map<*, *>)["500"])
+        assertEquals(historicalSale, salesFile.readText())
+
+        snapshot = NativeStore.updateInventory(
+            context,
+            JSONArray().put(
+                JSONObject().put("action", "move").put("packageId", "500")
+                    .put("targetPackageId", "600").put("card", "RETURNED-CARD")
+            ).toString()
+        )
+        assertEquals(listOf("AVAILABLE"), (snapshot["inventory"] as Map<*, *>)["500"])
+        assertEquals(listOf("RETURNED-CARD"), (snapshot["inventory"] as Map<*, *>)["600"])
+        assertEquals(historicalSale, salesFile.readText())
+
+        snapshot = NativeStore.updateInventory(
+            context,
+            JSONArray().put(
+                JSONObject().put("action", "delete").put("packageId", "600")
+                    .put("card", "RETURNED-CARD")
+            ).toString()
+        )
+        assertEquals(emptyList<String>(), (snapshot["inventory"] as Map<*, *>)["600"])
+        assertEquals(historicalSale, salesFile.readText())
 
         assertRejected {
             NativeStore.updateInventory(
                 context,
-                JSONArray().put(JSONObject().put("action", "delete").put("packageId", "500").put("card", "SOLD-CARD")).toString()
+                JSONArray().put(
+                    JSONObject().put("action", "edit").put("packageId", "500")
+                        .put("card", "AVAILABLE").put("newCard", "SOLD-CARD")
+                ).toString()
             )
         }
-        assertRejected {
-            NativeStore.updateInventory(
-                context,
-                JSONArray().put(JSONObject().put("action", "edit").put("packageId", "500").put("card", "AVAILABLE").put("newCard", "SOLD-CARD")).toString()
-            )
-        }
-        assertEquals("AVAILABLE\nSOLD-CARD\n", File(directory, "cards_500.txt").readText())
+        assertEquals("AVAILABLE\n", File(directory, "cards_500.txt").readText())
+        assertEquals(historicalSale, salesFile.readText())
     }
 
     @Test
