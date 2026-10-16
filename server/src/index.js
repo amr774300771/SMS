@@ -87,6 +87,40 @@ app.post('/v1/users/:id/disable', auth, requirePermission('users'), async (req, 
   if (!result.rowCount) return res.status(404).json({ error: 'USER_NOT_FOUND' });
   res.json({ user: result.rows[0] });
 });
+app.get('/v1/devices', auth, requirePermission('users'), async (req, res) => {
+  const result = await pool.query('select id,user_id,device_key,name,app_version,last_seen_at,revoked_at from devices where organization_id=$1 order by last_seen_at desc', [req.user.organization_id]);
+  res.json({ devices: result.rows });
+});
+app.post('/v1/devices/:id/revoke', auth, requirePermission('users'), async (req, res) => {
+  const result = await pool.query('update devices set revoked_at=coalesce(revoked_at, now()) where id=$1 and organization_id=$2 returning id,revoked_at', [req.params.id, req.user.organization_id]);
+  if (!result.rowCount) return res.status(404).json({ error: 'DEVICE_NOT_FOUND' });
+  res.json({ device: result.rows[0] });
+});
+app.get('/v1/audit', auth, requirePermission('reports'), async (req, res) => {
+  const limit = Math.min(Number(req.query.limit || 100), 500);
+  const result = await pool.query('select a.*, u.display_name from audit_logs a join users u on u.id=a.user_id where a.organization_id=$1 order by a.created_at desc limit $2', [req.user.organization_id, limit]);
+  res.json({ entries: result.rows });
+});
+app.get('/v1/reports/summary', auth, requirePermission('reports'), async (req, res) => {
+  const branchId = req.query.branchId;
+  const args = [req.user.organization_id];
+  const branch = branchId ? ' and s.branch_id=$2' : '';
+  if (branchId) args.push(branchId);
+  const sales = await pool.query(`select count(*)::int as count, coalesce(sum(amount),0)::int as revenue, coalesce(sum(amount - coalesce(c.cost_price,0)),0)::int as profit from sales s join cards c on c.id=s.card_id where s.organization_id=$1${branch}`, args);
+  const stock = await pool.query(`select p.id,p.name,count(c.id)::int as available from packages p left join cards c on c.package_id=p.id and c.status='available' where p.organization_id=$1${branch.replace('s.branch_id', 'p.branch_id')} group by p.id,p.name order by p.name`, args);
+  res.json({ sales: sales.rows[0], stock: stock.rows });
+});
+app.post('/v1/messages/:id/status', auth, async (req, res) => {
+  const { status, error } = req.body;
+  if (!['pending', 'submitted', 'failed'].includes(status)) return res.status(400).json({ error: 'INVALID_MESSAGE_STATUS' });
+  const result = await pool.query('update message_deliveries set status=$1,attempts=attempts+1,last_error=$2,updated_at=now() where id=$3 and organization_id=$4 returning *', [status, error || null, req.params.id, req.user.organization_id]);
+  if (!result.rowCount) return res.status(404).json({ error: 'MESSAGE_NOT_FOUND' });
+  res.json({ delivery: result.rows[0] });
+});
+app.get('/v1/conflicts', auth, requirePermission('reports'), async (req, res) => {
+  const result = await pool.query("select * from sync_conflicts where organization_id=$1 and status='open' order by created_at desc", [req.user.organization_id]);
+  res.json({ conflicts: result.rows });
+});
 
 app.get('/v1/sync/pull', auth, requireBranch, async (req, res) => {
   const after = req.query.after || '1970-01-01T00:00:00Z';

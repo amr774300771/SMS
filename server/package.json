@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node --watch src/index.js",
     "start": "node src/index.js",
-    "migrate": "psql \"$DATABASE_URL\" -f migrations/001_initial.sql"
+    "migrate": "for f in migrations/*.sql; do psql \"$DATABASE_URL\" -f \"$f\"; done"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

@@ -92,6 +92,34 @@ class CloudSyncClient {
     _check(response);
   }
 
+  Future<Map<String, dynamic>> listDevices() async {
+    _requireToken();
+    final response = await client.get(baseUri.resolve('/v1/devices'), headers: _headers);
+    _check(response);
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<void> revokeDevice(String deviceId) async {
+    _requireToken();
+    final response = await client.post(baseUri.resolve('/v1/devices/$deviceId/revoke'), headers: _headers);
+    _check(response);
+  }
+
+  Future<Map<String, dynamic>> reportSummary({String? branchId}) async {
+    _requireToken();
+    final uri = baseUri.resolve('/v1/reports/summary').replace(queryParameters: {if (branchId != null) 'branchId': branchId});
+    final response = await client.get(uri, headers: _headers);
+    _check(response);
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> listConflicts() async {
+    _requireToken();
+    final response = await client.get(baseUri.resolve('/v1/conflicts'), headers: _headers);
+    _check(response);
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   void _requireToken() { if (token == null) throw StateError('سجّل الدخول إلى الخادم أولاً'); }
   void _check(http.Response response) { if (response.statusCode < 200 || response.statusCode >= 300) throw StateError('Cloud API ${response.statusCode}: ${response.body}'); }
   void dispose() => client.close();

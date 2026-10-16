@@ -39,6 +39,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
   await Hive.openBox('preferences');
+  await Hive.openBox('sync_queue');
   try {
     await NativeApi.instance.initialize();
   } catch (_) {}
