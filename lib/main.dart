@@ -311,11 +311,15 @@ int _manualDebtBalance(String phone, Map<String, dynamic> data) {
 Future<void> _addManualDebt(
   BuildContext context,
   Map<String, dynamic> data,
-  Future<void> Function() onRefresh,
-) async {
+  Future<void> Function() onRefresh, {
+  String? initialPhone,
+  String? initialName,
+}) async {
   final input = await showManualDebtDialog(
     context: context,
     balanceForPhone: (phone) => _manualDebtBalance(phone, data),
+    initialPhone: initialPhone,
+    initialName: initialName,
   );
   if (input == null) return;
   if (input.targetBalance == input.currentBalance) {
@@ -363,6 +367,12 @@ List<String> _extractPdfCards(Uint8List bytes) {
 }
 
 String _money(dynamic v) => '${v ?? 0} ر.ي';
+String _whatsappStatusLabel(dynamic value) => switch ('$value') {
+      'pending' => 'رد WhatsApp قيد الانتظار',
+      'submitted' => 'مرّر Android الرد إلى WhatsApp؛ لم يؤكد الوصول',
+      'failed' => 'فشل رد WhatsApp؛ البيع والكرت محفوظان لإعادة المحاولة',
+      _ => '',
+    };
 String _err(Object e) =>
     e.toString().replaceFirst('PlatformException(', '').replaceAll(')', '');
 
@@ -883,6 +893,8 @@ void _saleDetails(BuildContext c, Map<String, dynamic> s,
             Text('الرصيد بعد البيع: ${s['debt']}'),
             Text('الوقت: ${s['time']}'),
             Text('الدفع: ${s['paymentMethod'] == 'cash' ? 'نقداً' : 'آجل'}'),
+            if (_whatsappStatusLabel(s['whatsappStatus']).isNotEmpty)
+              Text(_whatsappStatusLabel(s['whatsappStatus'])),
             Text('${s['receiptConfirmedAt'] ?? ''}'.trim().isNotEmpty
                 ? 'الاستلام: مؤكد يدوياً (${s['receiptConfirmedAt']})'
                 : 'الاستلام: لم يؤكد بعد'),
@@ -1091,19 +1103,15 @@ Future<String?> _openWhatsAppSaleCard(
           .replaceAll('{debt}', '${sale['debt'] ?? ''}')
           .replaceAll('{phone}', number)
           .replaceAll('{reason}', '');
-  final appUri = Uri(
-    scheme: 'whatsapp',
-    host: 'send',
-    queryParameters: {'phone': number, 'text': message},
+  final webUri = whatsappChatUri(
+    phone.isEmpty ? '${sale['phone'] ?? ''}' : phone,
+    message: message,
   );
-  final webUri = Uri.https('wa.me', '/$number', {'text': message});
+  if (webUri == null) {
+    return 'الرقم غير صالح. أدخل رقم جوال يمني محلياً أو أضف رمز الدولة مثل +967.';
+  }
   final launch = launchExternalUri ??
       (uri) => launchUrl(uri, mode: LaunchMode.externalApplication);
-  try {
-    if (await launch(appUri)) return null;
-  } catch (_) {
-    // Fall back to the universal link if the app scheme is unavailable.
-  }
   try {
     if (await launch(webUri)) return null;
   } catch (error) {
@@ -2224,6 +2232,15 @@ class _ClientsPageState extends State<ClientsPage> {
                   onSelected: (v) async {
                     if (v == 'access') {
                       _editClient(c, p, widget.data, widget.onRefresh);
+                    } else if (v == 'debt') {
+                      final clientName = _clientDisplayName(p, widget.data);
+                      await _addManualDebt(
+                        c,
+                        widget.data,
+                        widget.onRefresh,
+                        initialPhone: p,
+                        initialName: clientName == p ? '' : clientName,
+                      );
                     } else if (v == 'archive') {
                       await _archiveClient(c, p);
                     } else if (v == 'restore') {
@@ -2267,13 +2284,24 @@ class _ClientsPageState extends State<ClientsPage> {
                     else ...[
                       const PopupMenuItem(
                           value: 'access',
-                          child: Text('تعديل بيانات وصلاحيات العميل')),
+                          child: Text('تعديل')),
+                      const PopupMenuItem(
+                          value: 'debt', child: Text('إضافة / تعديل دين يدوي')),
+                      const PopupMenuItem(
+                          value: 'history', child: Text('سجل المبيعات')),
                       const PopupMenuItem(
                           value: 'archive',
-                          child: Text('حذف العميل من القائمة')),
+                          child: Text('حذف')),
                     ],
-                    const PopupMenuItem(
-                        value: 'history', child: Text('سجل المبيعات')),
+                    if (isArchived)
+                      const PopupMenuItem(
+                        value: 'debt_archived',
+                        enabled: false,
+                        child: Text('الدين اليدوي يتطلب استعادة العميل'),
+                      ),
+                    if (isArchived)
+                      const PopupMenuItem(
+                          value: 'history', child: Text('سجل المبيعات')),
                   ],
                 ),
                 onTap: () => _openAccount(c, p),
@@ -4896,7 +4924,13 @@ class SaleTile extends StatelessWidget {
             child: const Icon(Icons.credit_card, color: emerald),
           ),
           title: Text('${sale['phone']} • باقة ${sale['packageId']}'),
-          subtitle: Text('${sale['time']} • كرت ${sale['card']}'),
+          subtitle: Text([
+            '${sale['time']} • كرت ${sale['card']}',
+            if ('${sale['whatsappStatus'] ?? ''}' == 'failed')
+              _whatsappStatusLabel('failed'),
+            if ('${sale['whatsappStatus'] ?? ''}' == 'pending')
+              _whatsappStatusLabel('pending'),
+          ].join(' • ')),
           trailing: Text(
             _money(sale['debt']),
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
