@@ -18,3 +18,4 @@ android/key.properties
 *.iml
 # Platform generated
 .flutter-plugins
+android/.kotlin/
