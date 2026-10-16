@@ -27,6 +27,7 @@ import 'selected_features.dart';
 import 'sms_templates_page.dart';
 import 'service_diagnostics_page.dart';
 import 'whatsapp_utils.dart';
+import 'skeleton_widgets.dart';
 
 const emerald = Color(0xFF10B981),
     blue = Color(0xFF0284C7),
@@ -165,8 +166,7 @@ class _MainShellState extends State<MainShell> {
           children: [
             SafeArea(
               child: loading
-                  ? const Center(
-                      child: CircularProgressIndicator(color: emerald))
+                  ? const AppSkeleton(dashboard: true, rows: 2)
                   : RefreshIndicator(
                       onRefresh: refresh,
                       child: IndexedStack(index: index, children: pages),
@@ -340,8 +340,8 @@ Future<void> _addManualDebt(
     );
     await onRefresh();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('تم حفظ رصيد الدين وتحديث كشف الحساب.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('تم حفظ رصيد الدين وتحديث كشف الحساب.')));
     }
   } catch (e) {
     if (context.mounted) {
@@ -398,6 +398,14 @@ class HomePage extends StatelessWidget {
       (a, s) =>
           a + (s['price'] as num? ?? int.tryParse('${s['packageId']}') ?? 0),
     );
+    final readinessChecks = <MapEntry<String, bool>>[
+      MapEntry('محرك استقبال الرسائل', trigger['triggerEnabled'] == true),
+      MapEntry('قاعدة البيانات المحلية', data.isNotEmpty),
+      MapEntry('المخزون محمّل', totalCards > 0),
+      MapEntry(
+          'قناة إرسال SMS', defaultTargetPlatform == TargetPlatform.android),
+    ];
+    final readyCount = readinessChecks.where((check) => check.value).length;
     return CustomScrollView(
       slivers: [
         SliverPadding(
@@ -533,7 +541,7 @@ class HomePage extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '${trigger['triggerEnabled'] == true ? '3' : '2'}/5',
+                    '$readyCount/${readinessChecks.length}',
                     style: const TextStyle(
                       color: emerald,
                       fontWeight: FontWeight.bold,
@@ -543,22 +551,22 @@ class HomePage extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      _checkRow(
-                        'محرك استقبال الرسائل',
-                        trigger['triggerEnabled'] == true,
+                child: ExpansionTile(
+                  title: Text(
+                      'تفاصيل الجاهزية — $readyCount/${readinessChecks.length}'),
+                  subtitle: const Text('اضغط لعرض حالة المكونات المحلية'),
+                  leading: const Icon(Icons.health_and_safety_outlined),
+                  children: [
+                    Padding(
+                      padding:
+                          const EdgeInsetsDirectional.fromSTEB(16, 0, 16, 12),
+                      child: Column(
+                        children: readinessChecks
+                            .map((check) => _checkRow(check.key, check.value))
+                            .toList(),
                       ),
-                      _checkRow('قاعدة البيانات المحلية', data.isNotEmpty),
-                      _checkRow('المخزون محمّل', totalCards > 0),
-                      _checkRow(
-                        'قناة إرسال SMS',
-                        'android' == defaultTargetPlatform.name,
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
               if (_list(data['lowStockWarnings']).isNotEmpty)
@@ -611,27 +619,30 @@ class HomePage extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 18),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'آخر المبيعات',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
+              Card(
+                child: ExpansionTile(
+                  leading: const Icon(Icons.receipt_long, color: emerald),
+                  title: const Text('آخر المبيعات'),
+                  subtitle: Text('${sales.length} عملية مسجلة • عرض أحدث 4'),
+                  children: [
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: TextButton(
+                        onPressed: () => onOpen(1),
+                        child: const Text('عرض سجل المبيعات كاملاً'),
                       ),
                     ),
-                  ),
-                  TextButton(
-                    onPressed: () => onOpen(1),
-                    child: const Text('عرض الكل'),
-                  ),
-                ],
+                    if (sales.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(12, 0, 12, 12),
+                        child: EmptyCard(
+                            text: 'لا توجد مبيعات بعد. أضف مخزوناً للبدء.'),
+                      )
+                    else
+                      ...sales.take(4).map((sale) => SaleTile(sale: sale)),
+                  ],
+                ),
               ),
-              if (sales.isEmpty)
-                const EmptyCard(text: 'لا توجد مبيعات بعد. أضف مخزوناً للبدء.')
-              else
-                ...sales.take(4).map((s) => SaleTile(sale: s)),
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: () => _requestAndStart(context),
@@ -1025,7 +1036,8 @@ void _saleDetails(BuildContext c, Map<String, dynamic> s,
                 if (c.mounted) {
                   Navigator.pop(c);
                   ScaffoldMessenger.of(c).showSnackBar(const SnackBar(
-                    content: Text('فُتحت رسالة SMS جاهزة؛ راجع النص واضغط إرسال.'),
+                    content:
+                        Text('فُتحت رسالة SMS جاهزة؛ راجع النص واضغط إرسال.'),
                   ));
                 }
               } catch (e) {
@@ -1056,7 +1068,8 @@ String _manualSmsReceiptMessage(
       ? 'أهلاً {name}،\nكرتك: {card} | الباقة: {package} | السعر: {price} ر.ي\nالمتبقي عليك: {debt} ر.ي — القاضي نت'
       : template;
   return source
-      .replaceAll('{name}', clientName.trim().isEmpty ? 'عميلنا' : clientName.trim())
+      .replaceAll(
+          '{name}', clientName.trim().isEmpty ? 'عميلنا' : clientName.trim())
       .replaceAll('{card}', card)
       .replaceAll('{package}', packageId)
       .replaceAll('{price}', '$price')
@@ -1363,7 +1376,8 @@ class _SaleSheetState extends State<SaleSheet> {
                   DropdownMenuItem(
                       value: 'none', child: Text('بدون إرسال الآن')),
                   DropdownMenuItem(
-                      value: 'sms', child: Text('فتح SMS برسالة جاهزة (تأكيد يدوي)')),
+                      value: 'sms',
+                      child: Text('فتح SMS برسالة جاهزة (تأكيد يدوي)')),
                   DropdownMenuItem(
                       value: 'whatsapp',
                       child: Text('فتح محادثة WhatsApp للرقم')),
@@ -1548,6 +1562,12 @@ class InventoryPage extends StatefulWidget {
 class _InventoryPageState extends State<InventoryPage> {
   String filter = '';
   final Map<String, Set<String>> selected = {};
+  final Set<String> revealedCards = {};
+
+  String _revealKey(String packageId, String card) => '$packageId\u0000$card';
+
+  String _maskedCard(String card) =>
+      card.length > 4 ? '****${card.substring(card.length - 4)}' : '••••';
 
   int get selectedCount =>
       selected.values.fold(0, (sum, cards) => sum + cards.length);
@@ -1635,6 +1655,7 @@ class _InventoryPageState extends State<InventoryPage> {
           onChanged: (v) => setState(() {
             filter = v;
             selected.clear();
+            revealedCards.clear();
           }),
         ),
         const SizedBox(height: 12),
@@ -1729,6 +1750,15 @@ class _InventoryPageState extends State<InventoryPage> {
               label: Text('تحديد نتائج البحث حتى 5000 بطاقة ($totalMatches)'),
             ),
           ),
+        if (ids.isEmpty)
+          const EmptyCard(
+              text: 'لا توجد باقات لعرض مخزونها. أضف باقة من الإعدادات أولاً.')
+        else if (totalMatches == 0)
+          EmptyCard(
+            text: filter.isEmpty
+                ? 'المخزون فارغ. أضف بطاقات نصية أو استورد ملف PDF.'
+                : 'لا توجد بطاقات تطابق «$filter».',
+          ),
         const SizedBox(height: 12),
         ...ids.map((p) {
           final id = '${p['id']}';
@@ -1751,27 +1781,51 @@ class _InventoryPageState extends State<InventoryPage> {
               ),
               const Icon(Icons.expand_more),
             ]),
-            children: cards
-                .map(
-                  (card) => CheckboxListTile(
-                    dense: true,
-                    value: chosen.contains(card),
-                    title: Row(children: [
-                      const Icon(Icons.credit_card, color: emerald, size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(card)),
-                    ]),
-                    controlAffinity: ListTileControlAffinity.leading,
-                    onChanged: (value) => _toggle(id, card, value == true),
-                    secondary: IconButton(
-                      tooltip: 'نسخ',
+            children: cards.map(
+              (card) {
+                final key = _revealKey(id, card);
+                final isRevealed = revealedCards.contains(key);
+                return CheckboxListTile(
+                  dense: true,
+                  value: chosen.contains(card),
+                  title: Row(children: [
+                    const Icon(Icons.credit_card, color: emerald, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        isRevealed ? card : _maskedCard(card),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontFamily: 'monospace'),
+                      ),
+                    ),
+                  ]),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  onChanged: (value) => _toggle(id, card, value == true),
+                  secondary: Row(mainAxisSize: MainAxisSize.min, children: [
+                    IconButton(
+                      tooltip: 'نسخ الرقم الكامل',
                       icon: const Icon(Icons.copy),
                       onPressed: () =>
                           Clipboard.setData(ClipboardData(text: card)),
                     ),
-                  ),
-                )
-                .toList(),
+                    IconButton(
+                      tooltip: isRevealed ? 'إخفاء البطاقة' : 'إظهار البطاقة',
+                      icon: Icon(isRevealed
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined),
+                      onPressed: () => setState(() {
+                        if (isRevealed) {
+                          revealedCards.remove(key);
+                        } else {
+                          revealedCards.add(key);
+                        }
+                      }),
+                    ),
+                  ]),
+                );
+              },
+            ).toList(),
           );
         }),
       ],
@@ -1796,7 +1850,7 @@ class _InventoryPageState extends State<InventoryPage> {
       setState(selected.clear);
       ScaffoldMessenger.of(c).showSnackBar(SnackBar(
         content: Text(successMessage),
-        duration: const Duration(seconds: 12),
+        duration: const Duration(seconds: 5),
         action: SnackBarAction(
           label: 'تراجع',
           onPressed: () async {
@@ -1828,7 +1882,7 @@ class _InventoryPageState extends State<InventoryPage> {
           builder: (dialogContext) => AlertDialog(
             title: const Text('حذف البطاقات المحددة؟'),
             content: Text(
-                'سيُحذف $count بطاقة متاحة من المخزون فقط. لا تتأثر سجلات المبيعات، ويمكن التراجع خلال دقيقة.'),
+                'سيُحذف $count بطاقة متاحة من المخزون فقط. لا تتأثر سجلات المبيعات، ويمكن التراجع خلال خمس ثوانٍ.'),
             actions: [
               TextButton(
                   onPressed: () => Navigator.pop(dialogContext, false),
@@ -2283,15 +2337,12 @@ class _ClientsPageState extends State<ClientsPage> {
                           value: 'restore', child: Text('استعادة العميل'))
                     else ...[
                       const PopupMenuItem(
-                          value: 'access',
-                          child: Text('تعديل')),
+                          value: 'access', child: Text('تعديل')),
                       const PopupMenuItem(
                           value: 'debt', child: Text('إضافة / تعديل دين يدوي')),
                       const PopupMenuItem(
                           value: 'history', child: Text('سجل المبيعات')),
-                      const PopupMenuItem(
-                          value: 'archive',
-                          child: Text('حذف')),
+                      const PopupMenuItem(value: 'archive', child: Text('حذف')),
                     ],
                     if (isArchived)
                       const PopupMenuItem(
@@ -2371,6 +2422,18 @@ class _ClientsPageState extends State<ClientsPage> {
       await NativeApi.instance.saveClientAndTrusted(permissions, trusted);
       await widget.onRefresh();
       if (mounted) setState(() => showingArchived = true);
+      if (c.mounted) {
+        ScaffoldMessenger.of(c).showSnackBar(
+          SnackBar(
+            content: const Text('نُقل العميل إلى الأرشيف. يمكنك التراجع الآن.'),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'تراجع',
+              onPressed: () => _restoreClient(c, phone),
+            ),
+          ),
+        );
+      }
     } catch (e) {
       if (c.mounted)
         ScaffoldMessenger.of(c).showSnackBar(
@@ -2476,6 +2539,10 @@ class ReportsPage extends StatelessWidget {
           style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
         ),
         const SizedBox(height: 14),
+        if (sales.isEmpty)
+          const EmptyCard(
+              text:
+                  'لا توجد مبيعات لعرضها بعد. ستظهر الإحصاءات تلقائيًا بعد البيع.'),
         Wrap(
           spacing: 9,
           runSpacing: 9,
@@ -2631,195 +2698,210 @@ class SettingsPage extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         Card(
-          child: SwitchListTile(
-            value: active,
-            onChanged: (v) async {
-              await NativeApi.instance.toggleService();
-              if (v) await NativeApi.instance.startService();
-              await onRefresh();
-            },
-            title: const Text('محرك استقبال SMS'),
-            subtitle: Text(active ? 'نشط ويعمل عند وصول طلب' : 'متوقف مؤقتاً'),
-            secondary: const Icon(Icons.bolt, color: emerald),
+          child: ExpansionTile(
+            leading: const Icon(Icons.settings_outlined, color: emerald),
+            title: const Text('عام'),
+            subtitle: const Text('حالة المحرك والخيارات الأساسية'),
+            children: [
+              SwitchListTile(
+                value: active,
+                onChanged: (value) async {
+                  await NativeApi.instance.toggleService();
+                  if (value) await NativeApi.instance.startService();
+                  await onRefresh();
+                },
+                title: const Text('محرك استقبال SMS'),
+                subtitle:
+                    Text(active ? 'نشط ويعمل عند وصول طلب' : 'متوقف مؤقتاً'),
+                secondary: const Icon(Icons.bolt, color: emerald),
+              ),
+            ],
           ),
-        ),
-        ValueListenableBuilder(
-          valueListenable: Hive.box('preferences').listenable(),
-          builder: (context, box, _) => Column(children: [
-            SwitchListTile(
-              value: box.get('privacyMode', defaultValue: false) as bool,
-              onChanged: (value) => box.put('privacyMode', value),
-              title: const Text('وضع الخصوصية السريع'),
-              subtitle:
-                  const Text('يخفي الشاشة فوراً حتى تختار إظهارها مجدداً.'),
-              secondary: const Icon(Icons.visibility_off),
-            ),
-            SwitchListTile(
-              value: box.get('oneHanded', defaultValue: false) as bool,
-              onChanged: (value) => box.put('oneHanded', value),
-              title: const Text('وضع الاستخدام بيد واحدة'),
-              subtitle: const Text('زر بيع سريع أكبر وشريط تنقل أسهل للمس.'),
-              secondary: const Icon(Icons.pan_tool_alt_outlined),
-            ),
-          ]),
         ),
         Card(
           child: ExpansionTile(
-            initiallyExpanded: true,
-            leading: const Icon(Icons.tune, color: emerald),
-            title: const Text('الرسائل والتشغيل والصلاحيات'),
-            subtitle: const Text('إعدادات الاستخدام اليومي والردود الآلية'),
+            leading: const Icon(Icons.palette_outlined, color: emerald),
+            title: const Text('الواجهة'),
+            subtitle: const Text('الخصوصية وطريقة العرض وسهولة الاستخدام'),
             children: [
-        _settingTile(
-          c,
-          'قوالب الرسائل',
-          'ردود البيع والرفض والإيصال والتحصيل والترحيب',
-          Icons.text_snippet_outlined,
-          () => Navigator.push(
-              c,
-              MaterialPageRoute(
-                builder: (_) =>
-                    SmsTemplatesPage(data: data, onRefresh: onRefresh),
-              )),
-        ),
-        _settingTile(
-          c,
-          'تشخيص خدمة الرسائل',
-          'الأذونات والشريحة والخدمة وأسباب عدم البيع',
-          Icons.health_and_safety_outlined,
-          () => Navigator.push(
-              c,
-              MaterialPageRoute(
-                builder: (_) =>
-                    ServiceDiagnosticsPage(data: data, onRefresh: onRefresh),
-              )),
-        ),
-        _settingTile(
-          c,
-          'المشغّل والعملاء الموثقون',
-          'أنماط الرسائل والفئات وقائمة الموثقين',
-          Icons.tune,
-          () => Navigator.push(
-            c,
-            MaterialPageRoute(
-              builder: (_) => EnginePage(data: data, onRefresh: onRefresh),
-            ),
+              ValueListenableBuilder(
+                valueListenable: Hive.box('preferences').listenable(),
+                builder: (_, box, __) => Column(children: [
+                  SwitchListTile(
+                    value: box.get('privacyMode', defaultValue: false) as bool,
+                    onChanged: (value) => box.put('privacyMode', value),
+                    title: const Text('وضع الخصوصية السريع'),
+                    subtitle: const Text(
+                        'يخفي الشاشة فوراً حتى تختار إظهارها مجدداً.'),
+                    secondary: const Icon(Icons.visibility_off),
+                  ),
+                  SwitchListTile(
+                    value: box.get('oneHanded', defaultValue: false) as bool,
+                    onChanged: (value) => box.put('oneHanded', value),
+                    title: const Text('وضع الاستخدام بيد واحدة'),
+                    subtitle:
+                        const Text('زر بيع سريع أكبر وشريط تنقل أسهل للمس.'),
+                    secondary: const Icon(Icons.pan_tool_alt_outlined),
+                  ),
+                  SwitchListTile(
+                    value: box.get('dark', defaultValue: false) as bool,
+                    onChanged: (value) => box.put('dark', value),
+                    title: const Text('الوضع الليلي'),
+                    secondary: const Icon(Icons.dark_mode_outlined),
+                  ),
+                ]),
+              ),
+            ],
           ),
         ),
-        _settingTile(
-          c,
-          'الصلاحيات العامة',
-          'من يمكنه الشراء والحدود والأوقات',
-          Icons.admin_panel_settings,
-          () => Navigator.push(
-            c,
-            MaterialPageRoute(
-              builder: (_) =>
-                  GlobalPermissionsPage(data: data, onRefresh: onRefresh),
-            ),
-          ),
-        ),
-        _settingTile(
-          c,
-          'الباقات',
-          'إدارة أسعار الباقات وكلمات الطلب',
-          Icons.card_membership,
-          () => Navigator.push(
-            c,
-            MaterialPageRoute(
-              builder: (_) => PackagesPage(data: data, onRefresh: onRefresh),
-            ),
-          ),
-        ),
+        Card(
+          child: ExpansionTile(
+            leading: const Icon(Icons.tune, color: emerald),
+            title: const Text('السلوك'),
+            subtitle: const Text('الرسائل والرد الآلي والصلاحيات والباقات'),
+            children: [
+              _settingTile(
+                c,
+                'قوالب الرسائل',
+                'ردود البيع والرفض والإيصال والتحصيل والترحيب',
+                Icons.text_snippet_outlined,
+                () => Navigator.push(
+                    c,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          SmsTemplatesPage(data: data, onRefresh: onRefresh),
+                    )),
+              ),
+              _settingTile(
+                c,
+                'تشخيص خدمة الرسائل',
+                'الأذونات والشريحة والخدمة وأسباب عدم البيع',
+                Icons.health_and_safety_outlined,
+                () => Navigator.push(
+                    c,
+                    MaterialPageRoute(
+                      builder: (_) => ServiceDiagnosticsPage(
+                          data: data, onRefresh: onRefresh),
+                    )),
+              ),
+              _settingTile(
+                c,
+                'المشغّل والعملاء الموثقون',
+                'أنماط الرسائل والفئات وقائمة الموثقين',
+                Icons.tune,
+                () => Navigator.push(
+                  c,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        EnginePage(data: data, onRefresh: onRefresh),
+                  ),
+                ),
+              ),
+              _settingTile(
+                c,
+                'الصلاحيات العامة',
+                'من يمكنه الشراء والحدود والأوقات',
+                Icons.admin_panel_settings,
+                () => Navigator.push(
+                  c,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        GlobalPermissionsPage(data: data, onRefresh: onRefresh),
+                  ),
+                ),
+              ),
+              _settingTile(
+                c,
+                'الباقات',
+                'إدارة أسعار الباقات وكلمات الطلب',
+                Icons.card_membership,
+                () => Navigator.push(
+                  c,
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        PackagesPage(data: data, onRefresh: onRefresh),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
         Card(
           child: ExpansionTile(
             leading: const Icon(Icons.storage_outlined, color: emerald),
-            title: const Text('البيانات والأدوات المتقدمة'),
+            title: const Text('متقدم'),
             subtitle: const Text('النسخ الاحتياطي والطباعة والتخزين والسجلات'),
             children: [
-        _settingTile(
-          c,
-          'النسخ الاحتياطي',
-          'تصدير ومشاركة نسخة كاملة من البيانات',
-          Icons.backup,
-          () => _backup(c),
-        ),
-        _settingTile(
-          c,
-          'استعادة نسخة احتياطية',
-          'استبدال البيانات بنسخة أو دمج البطاقات فقط',
-          Icons.restore,
-          () => _restoreBackup(c, onRefresh),
-        ),
-        _settingTile(
-          c,
-          'جهوزية الخلفية',
-          'إعفاء التطبيق من تحسين البطارية',
-          Icons.battery_saver,
-          () => NativeApi.instance.openBatterySettings(),
-        ),
-        _settingTile(
-          c,
-          'الطابعة',
-          'عرض الطابعات المتاحة وطباعة الإيصالات من سجل البيع',
-          Icons.print_outlined,
-          () => _printerSettings(c),
-        ),
-        _settingTile(
-          c,
-          'مكان التخزين',
-          'عرض موقع بيانات التطبيق',
-          Icons.folder_open,
-          () async {
-            final p = await NativeApi.instance.dataPath();
-            if (c.mounted)
-              showDialog(
-                context: c,
-                builder: (_) => AlertDialog(
-                  title: const Text('مجلد بيانات القاضي نت'),
-                  content: SelectableText(p),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(c),
-                      child: const Text('حسناً'),
-                    ),
-                  ],
+              _settingTile(
+                c,
+                'النسخ الاحتياطي',
+                'تصدير ومشاركة نسخة كاملة من البيانات',
+                Icons.backup,
+                () => _backup(c),
+              ),
+              _settingTile(
+                c,
+                'استعادة نسخة احتياطية',
+                'استبدال البيانات بنسخة أو دمج البطاقات فقط',
+                Icons.restore,
+                () => _restoreBackup(c, onRefresh),
+              ),
+              _settingTile(
+                c,
+                'جهوزية الخلفية',
+                'إعفاء التطبيق من تحسين البطارية',
+                Icons.battery_saver,
+                () => NativeApi.instance.openBatterySettings(),
+              ),
+              _settingTile(
+                c,
+                'الطابعة',
+                'عرض الطابعات المتاحة وطباعة الإيصالات من سجل البيع',
+                Icons.print_outlined,
+                () => _printerSettings(c),
+              ),
+              _settingTile(
+                c,
+                'مكان التخزين',
+                'عرض موقع بيانات التطبيق',
+                Icons.folder_open,
+                () async {
+                  final p = await NativeApi.instance.dataPath();
+                  if (c.mounted)
+                    showDialog(
+                      context: c,
+                      builder: (_) => AlertDialog(
+                        title: const Text('مجلد بيانات القاضي نت'),
+                        content: SelectableText(p),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(c),
+                            child: const Text('حسناً'),
+                          ),
+                        ],
+                      ),
+                    );
+                },
+              ),
+              _settingTile(
+                c,
+                'سجل العمليات',
+                'آخر المبيعات المسجلة',
+                Icons.history,
+                () => _showLog(c, data),
+              ),
+              _settingTile(
+                c,
+                'حول التطبيق',
+                'القاضي نت • الإصدار 1.3.2',
+                Icons.info_outline,
+                () => showAboutDialog(
+                  context: c,
+                  applicationName: 'القاضي نت',
+                  applicationVersion: '1.3.2',
+                  applicationLegalese: 'إدارة محلية لبيع كروت الإنترنت.',
                 ),
-              );
-          },
-        ),
-        _settingTile(
-          c,
-          'سجل العمليات',
-          'آخر المبيعات المسجلة',
-          Icons.history,
-          () => _showLog(c, data),
-        ),
-        _settingTile(
-          c,
-          'حول التطبيق',
-          'القاضي نت • الإصدار 1.3.1',
-          Icons.info_outline,
-          () => showAboutDialog(
-            context: c,
-            applicationName: 'القاضي نت',
-            applicationVersion: '1.3.1',
-            applicationLegalese: 'إدارة محلية لبيع كروت الإنترنت.',
-          ),
-        ),
-        const SizedBox(height: 8),
-        ValueListenableBuilder(
-          valueListenable: Hive.box('preferences').listenable(),
-          builder: (_, box, __) => SwitchListTile(
-            value: box.get('dark', defaultValue: false),
-            onChanged: (v) => box.put('dark', v),
-            title: const Text('الوضع الليلي'),
-            secondary: const Icon(Icons.dark_mode_outlined),
-          ),
-        ),
+              ),
             ],
           ),
         ),
@@ -3148,6 +3230,10 @@ class _EnginePageState extends State<EnginePage> {
                       'كلمات الطلب تُستخرج من ملف الباقات؛ تطابق الفئة الأعلى أولاً.',
                       style: TextStyle(color: Colors.grey),
                     ),
+                    if (ps.isEmpty)
+                      const EmptyCard(
+                          text:
+                              'لا توجد باقات للمشغّل. أضف باقة لبدء مطابقة الطلبات.'),
                     if (keywordConflicts.isNotEmpty)
                       Card(
                         color: Colors.deepOrange.withValues(alpha: .08),
@@ -3246,6 +3332,10 @@ class _EnginePageState extends State<EnginePage> {
                       icon: const Icon(Icons.playlist_add),
                       label: const Text('إضافة عدة أرقام دفعة واحدة'),
                     ),
+                    if (clients.isEmpty)
+                      const EmptyCard(
+                          text:
+                              'لا يوجد عملاء موثقون بعد. أضف عميلًا أو فعّل وضع التوثيق عند الحاجة.'),
                     ...clients.map((v) {
                       final phone = v is Map ? '${v['phone']}' : '$v';
                       return ListTile(
@@ -3831,6 +3921,9 @@ class _GlobalPermissionsPageState extends State<GlobalPermissionsPage> {
             'الباقات المسموحة',
             style: TextStyle(fontWeight: FontWeight.bold),
           ),
+          if (ids.isEmpty)
+            const EmptyCard(
+                text: 'لا توجد باقات للصلاحيات. أضف باقة أولاً من الإعدادات.'),
           ...ids.map(
             (id) => CheckboxListTile(
               value: allowed.contains(id),
@@ -3851,6 +3944,8 @@ class _GlobalPermissionsPageState extends State<GlobalPermissionsPage> {
               style: TextStyle(fontWeight: FontWeight.bold)),
           const Text(
               'يُطبّق خصم المجموعة تلقائياً على كل باقة، ويمكن تعيين خصم أو سعر خاص للعميل من ملفه.'),
+          if (_list(g['priceGroups']).isEmpty)
+            const ListTile(title: Text('لا توجد مجموعات تسعير بعد.')),
           ..._list(g['priceGroups']).map(_map).map((group) => Card(
                 child: ListTile(
                   leading: const Icon(Icons.sell_outlined),
@@ -4568,7 +4663,8 @@ class _PackagesPageState extends State<PackagesPage> {
                                   if (value == 'edit') {
                                     _editPackage(c, p, currentData, _reload);
                                   } else if (value == 'delete') {
-                                    _deletePackage(c, p, stock, _reload);
+                                    _deletePackage(
+                                        c, p, stock, currentData, _reload);
                                   }
                                 },
                                 itemBuilder: (_) => const [
@@ -4879,15 +4975,28 @@ Future<void> _editPackage(
   }
 }
 
-Future<void> _deletePackage(BuildContext c, Map<String, dynamic> package,
-    int stock, Future<void> Function() refresh) async {
+Future<void> _deletePackage(
+  BuildContext c,
+  Map<String, dynamic> package,
+  int stock,
+  Map<String, dynamic> data,
+  Future<void> Function() refresh,
+) async {
   final id = '${package['id']}';
+  final originalPackages = Map<String, dynamic>.from(
+    jsonDecode(jsonEncode(_map(data['packages']))) as Map,
+  );
+  final originalPermissions = Map<String, dynamic>.from(
+    jsonDecode(jsonEncode(_map(data['permissions']))) as Map,
+  );
+  final originalCards =
+      _list(_inventory(data)[id]).map((card) => '$card').toList();
   final confirmed = await showDialog<bool>(
     context: c,
     builder: (dialogContext) => AlertDialog(
       title: const Text('حذف الباقة؟'),
       content: Text(
-          'سيُحذف تعريف باقة ${package['label'] ?? id} والمعرّف $id، وسيُزال $stock كرتاً غير مباع من مخزونها. تبقى سجلات المبيعات والحركات والأرصدة السابقة كما هي. لا يمكن التراجع عن حذف المخزون إلا باستعادة نسخة احتياطية.'),
+          'سيُحذف تعريف باقة ${package['label'] ?? id} والمعرّف $id، وسيُزال $stock كرتاً غير مباع من مخزونها. تبقى سجلات المبيعات والحركات والأرصدة السابقة كما هي، ويمكن التراجع خلال خمس ثوانٍ.'),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -4902,9 +5011,41 @@ Future<void> _deletePackage(BuildContext c, Map<String, dynamic> package,
   try {
     await NativeApi.instance.deletePackage(id);
     await refresh();
-    if (c.mounted)
-      ScaffoldMessenger.of(c).showSnackBar(const SnackBar(
-          content: Text('حُذفت الباقة؛ بقي سجلها المالي محفوظاً.')));
+    if (c.mounted) {
+      ScaffoldMessenger.of(c).showSnackBar(
+        SnackBar(
+          content: const Text('حُذفت الباقة؛ بقي سجلها المالي محفوظاً.'),
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'تراجع',
+            onPressed: () async {
+              try {
+                await NativeApi.instance.restoreDeletedPackage(
+                  id: id,
+                  originalPackages: originalPackages,
+                  originalPermissions: originalPermissions,
+                  cards: originalCards,
+                );
+                await refresh();
+                if (c.mounted) {
+                  ScaffoldMessenger.of(c).showSnackBar(const SnackBar(
+                    content: Text('تمت استعادة الباقة ومخزونها وصلاحياتها.'),
+                    duration: Duration(seconds: 3),
+                  ));
+                }
+              } catch (error) {
+                if (c.mounted) {
+                  ScaffoldMessenger.of(c).showSnackBar(SnackBar(
+                    content: Text(
+                        'تعذر التراجع دون استبدال بيانات أحدث: ${_err(error)}'),
+                  ));
+                }
+              }
+            },
+          ),
+        ),
+      );
+    }
   } catch (e) {
     if (c.mounted)
       ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(_err(e))));

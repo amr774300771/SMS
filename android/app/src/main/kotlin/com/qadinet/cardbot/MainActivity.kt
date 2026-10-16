@@ -33,6 +33,15 @@ class MainActivity : FlutterActivity() {
                     "deletePackage" -> result.success(
                         NativeStore.deletePackage(this, call.argument<String>("packageId") ?: "")
                     )
+                    "restoreDeletedPackage" -> result.success(
+                        NativeStore.restoreDeletedPackage(
+                            this,
+                            call.argument<String>("packageId") ?: "",
+                            call.argument<String>("originalPackages") ?: "{}",
+                            call.argument<String>("originalPermissions") ?: "{}",
+                            call.argument<ArrayList<String>>("cards")?.toList().orEmpty()
+                        )
+                    )
                     "sell" -> result.success(
                         NativeStore.sell(
                             this,

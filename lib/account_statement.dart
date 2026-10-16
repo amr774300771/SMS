@@ -34,6 +34,7 @@ String _accountPhoneKey(String value) {
   }
   return digits.replaceFirst(RegExp(r'^0+'), '').takeLast(10);
 }
+
 String _accountMoney(int value) =>
     '${NumberFormat('#,##0', 'en').format(value.abs())} ر.ي';
 DateTime _accountDate(Map<String, dynamic> value) =>
@@ -300,7 +301,37 @@ class _AccountStatementPageState extends State<AccountStatementPage> {
           const Divider(height: 1),
           Expanded(
             child: rows.isEmpty
-                ? const Center(child: Text('لا توجد حركات في الفترة المحددة.'))
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.inbox_outlined,
+                              size: 44, color: Colors.grey),
+                          const SizedBox(height: 10),
+                          Text(
+                            _allTransactions.isEmpty
+                                ? 'لا توجد حركات مسجلة لهذا العميل بعد.'
+                                : 'لا توجد حركات تطابق الفترة أو نوع الحركة المحدد.',
+                            textAlign: TextAlign.center,
+                          ),
+                          if (_allTransactions.isNotEmpty &&
+                              (range != null || filter != 'all')) ...[
+                            const SizedBox(height: 8),
+                            OutlinedButton.icon(
+                              onPressed: () => setState(() {
+                                range = null;
+                                filter = 'all';
+                              }),
+                              icon: const Icon(Icons.filter_alt_off_outlined),
+                              label: const Text('مسح المرشحات'),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  )
                 : ListView.separated(
                     padding: const EdgeInsets.all(12),
                     itemCount: rows.length,
@@ -688,8 +719,8 @@ class _AccountStatementPageState extends State<AccountStatementPage> {
     if (input == null) return;
     if (input.targetBalance == _currentBalance) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('الرصيد المدخل يساوي الرصيد الحالي.')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('الرصيد المدخل يساوي الرصيد الحالي.')));
       }
       return;
     }

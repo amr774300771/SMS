@@ -743,6 +743,82 @@ object NativeStore {
         snapshot(context)
     }
 
+    /**
+     * تراجع ذري قصير العمر: يستعيد تعريف الباقة والبطاقات والصلاحيات السابقة.
+     * يرفض التنفيذ إذا أُعيد إنشاء الباقة أو أُضيف مخزون جديد بعد الحذف.
+     */
+    fun restoreDeletedPackage(
+        context: Context,
+        packageId: String,
+        originalPackagesJson: String,
+        originalPermissionsJson: String,
+        cards: List<String>
+    ): Map<String, Any?> = synchronized(lock) {
+        require(packageIdPattern.matches(packageId)) { "معرّف الباقة غير صالح" }
+        val originalPackages = JSONObject(originalPackagesJson)
+        val originalItems = originalPackages.optJSONArray("packages") ?: JSONArray()
+        val definition = (0 until originalItems.length())
+            .mapNotNull { originalItems.optJSONObject(it) }
+            .firstOrNull { it.optString("id") == packageId }
+            ?: throw IllegalArgumentException("تعذر العثور على تعريف الباقة الأصلي")
+
+        val currentPackages = json(context, "packages.json", "{\"packages\":[]}")
+        val currentItems = currentPackages.optJSONArray("packages") ?: JSONArray()
+        require((0 until currentItems.length()).none {
+            currentItems.optJSONObject(it)?.optString("id") == packageId
+        }) { "أُعيد إنشاء الباقة بالفعل؛ لم يُستبدل أي مخزون" }
+
+        val cardFile = file(context, "cards_$packageId.txt")
+        require(!cardFile.exists() || cardFile.readLines(Charsets.UTF_8).all { it.isBlank() }) {
+            "يوجد مخزون جديد لهذه الباقة؛ لم تتم الكتابة فوقه"
+        }
+        val cleanCards = cards.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        require(cleanCards.size == cards.size && cleanCards.none {
+            it.contains('\n') || it.contains('\r')
+        }) { "قائمة البطاقات الأصلية غير صالحة للاستعادة" }
+
+        val currentPermissions = json(context, "permissions.json", "{\"global\":{},\"clients\":[]}")
+        val originalPermissions = JSONObject(originalPermissionsJson)
+        val currentGlobal = currentPermissions.optJSONObject("global") ?: JSONObject()
+        val originalGlobal = originalPermissions.optJSONObject("global") ?: JSONObject()
+        mergeAllowedPackage(currentGlobal, originalGlobal, packageId)
+
+        val currentClients = currentPermissions.optJSONArray("clients") ?: JSONArray()
+        val originalClients = originalPermissions.optJSONArray("clients") ?: JSONArray()
+        val originalByPhone = (0 until originalClients.length())
+            .mapNotNull { originalClients.optJSONObject(it) }
+            .associateBy { it.optString("phone") }
+        for (index in 0 until currentClients.length()) {
+            val client = currentClients.optJSONObject(index) ?: continue
+            originalByPhone[client.optString("phone")]?.let { originalClient ->
+                mergeAllowedPackage(client, originalClient, packageId)
+            }
+        }
+        currentPackages.put("packages", currentItems.put(definition))
+        currentPermissions.put("global", currentGlobal)
+
+        val restoredCards = if (cleanCards.isEmpty()) "" else cleanCards.joinToString("\n", postfix = "\n")
+        writeBatch(
+            context,
+            mapOf(
+                "packages.json" to currentPackages.toString(),
+                "permissions.json" to currentPermissions.toString(),
+                "cards_$packageId.txt" to restoredCards
+            )
+        )
+        snapshot(context)
+    }
+
+    /** يعيد سماح الباقة المحذوفة فقط، ويحافظ على أي تعديلات أحدث لبقية القوائم. */
+    private fun mergeAllowedPackage(current: JSONObject, original: JSONObject, packageId: String) {
+        val originalAllowed = original.optJSONArray("allowedPackages") ?: return
+        if ((0 until originalAllowed.length()).none { originalAllowed.optString(it) == packageId }) return
+        val currentAllowed = current.optJSONArray("allowedPackages") ?: return
+        if ((0 until currentAllowed.length()).none { currentAllowed.optString(it) == packageId }) {
+            currentAllowed.put(packageId)
+        }
+    }
+
     private fun filteredIds(values: JSONArray, removed: String): JSONArray {
         val output = JSONArray()
         for (index in 0 until values.length()) {

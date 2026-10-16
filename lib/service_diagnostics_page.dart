@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'native_api.dart';
+import 'skeleton_widgets.dart';
 
 class ServiceDiagnosticsPage extends StatefulWidget {
   final Map<String, dynamic> data;
@@ -60,7 +61,7 @@ class _ServiceDiagnosticsPageState extends State<ServiceDiagnosticsPage> {
             icon: const Icon(Icons.refresh))
       ]),
       body: loading && status.isEmpty
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppSkeleton(rows: 6)
           : ListView(padding: const EdgeInsets.all(16), children: [
               Card(
                 child: Padding(
@@ -80,11 +81,14 @@ class _ServiceDiagnosticsPageState extends State<ServiceDiagnosticsPage> {
                       OutlinedButton.icon(
                         onPressed: () async {
                           try {
-                            await NativeApi.instance.openWhatsAppNotificationSettings();
+                            await NativeApi.instance
+                                .openWhatsAppNotificationSettings();
                           } catch (error) {
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('تعذر فتح إعدادات الإشعارات: $error')),
+                                SnackBar(
+                                    content: Text(
+                                        'تعذر فتح إعدادات الإشعارات: $error')),
                               );
                             }
                           }
@@ -177,7 +181,8 @@ class _ServiceDiagnosticsPageState extends State<ServiceDiagnosticsPage> {
         'sale_whatsapp_failed' => 'بيع ناجح مع فشل رد WhatsApp',
         'whatsapp_reply_failed' => 'تعذر الرد من إشعار WhatsApp',
         'whatsapp_rate_limited' => 'تجاوز حد الردود المؤقت؛ ستُعاد المحاولة',
-        'whatsapp_reply_recovered' => 'مرّر Android رد البيع المسجل إلى WhatsApp',
+        'whatsapp_reply_recovered' =>
+          'مرّر Android رد البيع المسجل إلى WhatsApp',
         'ambiguous_keyword' => 'تطابق الطلب مع أكثر من باقة؛ لم يُصرف كرت',
         'sms_send_failed' => 'فشل إرسال الرسالة',
         'out_of_stock' => 'نفاد المخزون',

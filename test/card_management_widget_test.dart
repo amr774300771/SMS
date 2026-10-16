@@ -19,7 +19,7 @@ void main() {
           ],
         },
         'inventory': {
-          '500': ['CARD-A', 'CARD-B'],
+          '500': ['CARD-1234', 'CARD-5678'],
           '600': <String>[],
         },
       };
@@ -64,9 +64,34 @@ void main() {
     expect(changes, hasLength(2));
     expect(changes.map((change) => change['action']).toSet(), {'delete'});
     expect(find.text('تراجع'), findsOneWidget);
+    expect(
+      tester.widget<SnackBar>(find.byType(SnackBar)).duration,
+      const Duration(seconds: 5),
+    );
 
     await tester.tap(find.text('تراجع'));
     await tester.pumpAndSettle();
     expect(calls.any((call) => call.method == 'undoInventoryChange'), isTrue);
+  });
+
+  testWidgets('masks inventory card numbers until explicitly revealed',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: InventoryPage(data: data(), onRefresh: () async {}),
+      ),
+    ));
+    await tester.tap(find.text('باقة 500 — 2 بطاقة'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('****1234'), findsOneWidget);
+    expect(find.text('CARD-1234'), findsNothing);
+    await tester.tap(find.byTooltip('إظهار البطاقة').first);
+    await tester.pumpAndSettle();
+    expect(find.text('CARD-1234'), findsOneWidget);
+    await tester.tap(find.byTooltip('إخفاء البطاقة').first);
+    await tester.pumpAndSettle();
+    expect(find.text('****1234'), findsOneWidget);
+    expect(find.text('CARD-1234'), findsNothing);
   });
 }

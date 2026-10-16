@@ -110,6 +110,23 @@ class NativeApi {
     return _snapshot;
   }
 
+  Future<Map<String, dynamic>> restoreDeletedPackage({
+    required String id,
+    required Map<String, dynamic> originalPackages,
+    required Map<String, dynamic> originalPermissions,
+    required List<String> cards,
+  }) async {
+    _snapshot = Map<String, dynamic>.from(
+      await _channel.invokeMethod('restoreDeletedPackage', {
+        'packageId': id,
+        'originalPackages': jsonEncode(originalPackages),
+        'originalPermissions': jsonEncode(originalPermissions),
+        'cards': cards,
+      }),
+    );
+    return _snapshot;
+  }
+
   Future<Map<String, dynamic>> sell(
     String id,
     String phone, {

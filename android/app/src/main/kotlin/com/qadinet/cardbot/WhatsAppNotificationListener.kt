@@ -90,15 +90,8 @@ class WhatsAppNotificationListener : NotificationListenerService() {
         val message = extractNotificationMessage(extras)
         if (message.isBlank() || message.length > 2000 || looksLikeOwnMessage(message)) return true
 
-        val action = notification.actions?.firstOrNull { candidate ->
-            candidate.actionIntent != null && candidate.remoteInputs?.any {
-                it.allowFreeFormInput && it.resultKey.isNotBlank()
-            } == true
-        } ?: return true
-        val remoteInputs = action.remoteInputs
-            ?.filter { it.allowFreeFormInput && it.resultKey.isNotBlank() }
-            ?.toTypedArray()
-            ?.takeIf { it.isNotEmpty() } ?: return true
+        val action = firstTextReplyAction(notification) ?: return true
+        val remoteInputs = textReplyInputs(action).takeIf { it.isNotEmpty() } ?: return true
         val replyIntent = action.actionIntent ?: return true
 
         val phone = resolveSenderPhone(sbn, title) ?: return true
@@ -247,6 +240,17 @@ class WhatsAppNotificationListener : NotificationListenerService() {
                 ?: nonBlank(Notification.EXTRA_TITLE)
                 ?: ""
         }
+
+        internal fun firstTextReplyAction(notification: Notification): Notification.Action? =
+            notification.actions?.firstOrNull { action ->
+                action.actionIntent != null && textReplyInputs(action).isNotEmpty()
+            }
+
+        internal fun textReplyInputs(action: Notification.Action): Array<RemoteInput> =
+            action.remoteInputs
+                ?.filter { it.allowFreeFormInput && it.resultKey.isNotBlank() }
+                ?.toTypedArray()
+                ?: emptyArray()
 
         internal fun isGroupConversation(extras: Bundle, sdkInt: Int = Build.VERSION.SDK_INT): Boolean {
             // قيمة false الصريحة تعني محادثة فردية ولا يجوز نقضها بتخمين العنوان.
