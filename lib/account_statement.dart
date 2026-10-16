@@ -181,7 +181,7 @@ class _AccountStatementPageState extends State<AccountStatementPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(clientName, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: const Text('ملف العميل'),
         actions: [
           IconButton(
             tooltip: 'فلترة بالتاريخ',
@@ -196,87 +196,108 @@ class _AccountStatementPageState extends State<AccountStatementPage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Column(
-              children: [
-                Card(
-                  color: _accountGreen.withValues(alpha: .09),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(widget.phone, textAlign: TextAlign.right),
-                        const SizedBox(height: 8),
-                        Text(
-                          balance > 0
-                              ? 'المطلوب تحصيله'
-                              : balance < 0
-                                  ? 'رصيد دائن للعميل'
-                                  : 'الحساب مسدد',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        Text(
-                          _accountMoney(balance),
-                          style: Theme.of(context)
-                              .textTheme
-                              .headlineMedium
-                              ?.copyWith(
-                                color: balance > 0
-                                    ? Colors.deepOrange
-                                    : _accountGreen,
-                                fontWeight: FontWeight.w900,
-                              ),
-                        ),
-                        const Divider(),
-                        Wrap(
-                          spacing: 18,
-                          runSpacing: 8,
-                          children: [
-                            _SummaryValue(
-                                label: 'مبيعات آجل',
-                                value: _accountMoney(creditSales)),
-                            _SummaryValue(
-                                label: 'دفعات مستلمة',
-                                value: _accountMoney(totalReceipts)),
-                            _SummaryValue(
-                                label: 'حركات مسجلة',
-                                value: '${_allTransactions.length}'),
-                          ],
-                        ),
-                        if (range != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              'الفترة ${DateFormat('yyyy/MM/dd').format(range!.start)} – ${DateFormat('yyyy/MM/dd').format(range!.end)} • رصيد بدايتها ${_accountMoney(_openingBalanceForRange())}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
+      body: CustomScrollView(
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                _clientProfileCard(balance),
+                const SizedBox(height: 12),
+                Row(
                   children: [
-                    _action(
-                        'استلام دفعة', Icons.payments_outlined, _recordReceipt),
-                    _action('تعديل / إضافة الدين', Icons.edit_note,
-                        _setManualDebtBalance),
-                    _action('قيد تسوية', Icons.tune, _recordAdjustment),
-                    _action(
-                        'صرف كرت', Icons.confirmation_number_outlined, _sell),
-                    _action('مشاركة الكشف', Icons.ios_share, _shareMenu),
-                    _action('تذكير تحصيل', Icons.notifications_active_outlined,
-                        _collectionReminder),
-                    _action('طباعة ملف العميل', Icons.print_outlined,
-                        () => _pdfAction('print')),
+                    Expanded(
+                      child: _metricCard(
+                        icon: Icons.credit_score_outlined,
+                        label: 'مبيعات آجل',
+                        value: _accountMoney(creditSales),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _metricCard(
+                        icon: Icons.payments_outlined,
+                        label: 'دفعات مستلمة',
+                        value: _accountMoney(totalReceipts),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _metricCard(
+                        icon: Icons.receipt_long_outlined,
+                        label: 'الحركات',
+                        value: '${_allTransactions.length}',
+                      ),
+                    ),
                   ],
                 ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _recordReceipt,
+                        icon: const Icon(Icons.payments_outlined),
+                        label: const Text('استلام دفعة'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _sell,
+                        icon: const Icon(Icons.confirmation_number_outlined),
+                        label: const Text('صرف كرت'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _action('تعديل / إضافة الدين', Icons.edit_note,
+                          _setManualDebtBalance),
+                      _action('قيد تسوية', Icons.tune, _recordAdjustment),
+                      _action('مشاركة الكشف', Icons.ios_share, _shareMenu),
+                      _action(
+                          'تذكير تحصيل',
+                          Icons.notifications_active_outlined,
+                          _collectionReminder),
+                      _action('طباعة ملف العميل', Icons.print_outlined,
+                          () => _pdfAction('print')),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text('كشف الحساب',
+                          style:
+                              Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.w900,
+                                  )),
+                    ),
+                    Text('${rows.length} حركة',
+                        style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+                if (range != null) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: _accountGreen.withValues(alpha: .08),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      'الفترة ${DateFormat('yyyy/MM/dd').format(range!.start)} – ${DateFormat('yyyy/MM/dd').format(range!.end)} • رصيد بدايتها ${_accountMoney(_openingBalanceForRange())}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 4),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -295,55 +316,197 @@ class _AccountStatementPageState extends State<AccountStatementPage> {
                     ],
                   ),
                 ),
-              ],
+              ]),
             ),
           ),
-          const Divider(height: 1),
-          Expanded(
-            child: rows.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.inbox_outlined,
-                              size: 44, color: Colors.grey),
-                          const SizedBox(height: 10),
-                          Text(
-                            _allTransactions.isEmpty
-                                ? 'لا توجد حركات مسجلة لهذا العميل بعد.'
-                                : 'لا توجد حركات تطابق الفترة أو نوع الحركة المحدد.',
-                            textAlign: TextAlign.center,
-                          ),
-                          if (_allTransactions.isNotEmpty &&
-                              (range != null || filter != 'all')) ...[
-                            const SizedBox(height: 8),
-                            OutlinedButton.icon(
-                              onPressed: () => setState(() {
-                                range = null;
-                                filter = 'all';
-                              }),
-                              icon: const Icon(Icons.filter_alt_off_outlined),
-                              label: const Text('مسح المرشحات'),
-                            ),
-                          ],
-                        ],
+          if (rows.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.account_balance_wallet_outlined,
+                          size: 48,
+                          color: Theme.of(context).colorScheme.outline),
+                      const SizedBox(height: 10),
+                      Text(
+                        _allTransactions.isEmpty
+                            ? 'لا توجد حركات مسجلة لهذا العميل بعد.'
+                            : 'لا توجد حركات تطابق الفترة أو نوع الحركة المحدد.',
+                        textAlign: TextAlign.center,
                       ),
-                    ),
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: rows.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 4),
-                    itemBuilder: (context, index) =>
-                        _transactionTile(rows[index]),
+                      if (_allTransactions.isNotEmpty &&
+                          (range != null || filter != 'all')) ...[
+                        const SizedBox(height: 8),
+                        OutlinedButton.icon(
+                          onPressed: () => setState(() {
+                            range = null;
+                            filter = 'all';
+                          }),
+                          icon: const Icon(Icons.filter_alt_off_outlined),
+                          label: const Text('مسح المرشحات'),
+                        ),
+                      ],
+                    ],
                   ),
+                ),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => _transactionTile(rows[index]),
+                  childCount: rows.length,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _clientProfileCard(int balance) {
+    final balanceLabel = balance > 0
+        ? 'المطلوب تحصيله'
+        : balance < 0
+            ? 'رصيد دائن للعميل'
+            : 'الحساب مسدد';
+    final statusLabel = balance > 0
+        ? 'عليه رصيد'
+        : balance < 0
+            ? 'له رصيد'
+            : 'مسدد';
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: AlignmentDirectional.topStart,
+          end: AlignmentDirectional.bottomEnd,
+          colors: [Color(0xFF0C6B58), Color(0xFF10B981)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: _accountGreen.withValues(alpha: .20),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 25,
+                backgroundColor: Colors.white.withValues(alpha: .16),
+                child: const Icon(Icons.person_outline,
+                    color: Colors.white, size: 28),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      clientName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(widget.phone,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: Colors.white.withValues(alpha: .88))),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.verified_user_outlined,
+                  color: Colors.white70, size: 22),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white.withValues(alpha: .18)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(balanceLabel,
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 13)),
+                      const SizedBox(height: 4),
+                      Text(statusLabel,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: Text(
+                      _accountMoney(balance),
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 27,
+                          fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
+
+  Widget _metricCard({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) =>
+      Container(
+        constraints: const BoxConstraints(minHeight: 104),
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Theme.of(context).dividerColor),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: _accountGreen, size: 19),
+            const SizedBox(height: 7),
+            _SummaryValue(label: label, value: value),
+          ],
+        ),
+      );
 
   Widget _action(String label, IconData icon, Future<void> Function() action) =>
       OutlinedButton.icon(
@@ -1052,8 +1215,17 @@ class _SummaryValue extends StatelessWidget {
   Widget build(BuildContext context) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w700))
+          Text(label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(value,
+                maxLines: 1,
+                style: const TextStyle(fontWeight: FontWeight.w800)),
+          ),
         ],
       );
 }
