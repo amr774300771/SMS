@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'cloud_sync.dart';
+import 'users_page.dart';
 
 class CloudSyncSettingsPage extends StatefulWidget {
   const CloudSyncSettingsPage({super.key});
@@ -14,6 +15,7 @@ class _CloudSyncSettingsPageState extends State<CloudSyncSettingsPage> {
   CloudSyncClient? client;
   String status = 'غير متصل';
   bool busy = false;
+  Map<String, dynamic>? session;
 
   @override
   void dispose() { endpoint.dispose(); email.dispose(); password.dispose(); client?.dispose(); super.dispose(); }
@@ -24,6 +26,7 @@ class _CloudSyncSettingsPageState extends State<CloudSyncSettingsPage> {
       client?.dispose();
       client = CloudSyncClient(endpoint.text.trim());
       await client!.login(email.text.trim(), password.text);
+      session = await client!.me();
       if (mounted) setState(() => status = 'متصل بالخادم');
     } catch (e) {
       if (mounted) setState(() => status = 'تعذر الاتصال: ${e.toString().replaceFirst('Bad state: ', '')}');
@@ -43,6 +46,18 @@ class _CloudSyncSettingsPageState extends State<CloudSyncSettingsPage> {
       TextField(controller: password, obscureText: true, decoration: const InputDecoration(labelText: 'كلمة المرور')),
       const SizedBox(height: 16),
       FilledButton.icon(onPressed: busy ? null : connect, icon: const Icon(Icons.login), label: Text(busy ? 'جارٍ الاتصال…' : 'تسجيل الدخول والمزامنة')),
+      if (session != null && ((session!['permissions'] as List?)?.contains('users') ?? false)) ...[
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: () {
+            final branches = (session!['branches'] as List? ?? []);
+            if (branches.isEmpty) return;
+            Navigator.push(context, MaterialPageRoute(builder: (_) => UsersPage(client: client!, branchId: '${(branches.first as Map)['id']}')));
+          },
+          icon: const Icon(Icons.manage_accounts_outlined),
+          label: const Text('إدارة المستخدمين والأدوار'),
+        ),
+      ],
       const SizedBox(height: 16),
       const Card(child: Padding(padding: EdgeInsets.all(14), child: Text('للتطوير المحلي: شغّل الخادم على جهاز الكمبيوتر، واستخدم 10.0.2.2 من محاكي Android أو عنوان الشبكة المحلي من هاتف حقيقي. لا تضع JWT_SECRET داخل التطبيق.'))),
     ]),

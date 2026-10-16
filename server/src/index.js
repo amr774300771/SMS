@@ -66,6 +66,27 @@ app.post('/v1/auth/login', async (req, res) => {
   delete user.password_hash; res.json({ token: sign(user), user });
 });
 app.get('/v1/me', auth, async (req, res) => res.json({ user: req.user, permissions: permissions[req.user.role] || [], branches: (await pool.query('select b.* from branches b join memberships m on m.branch_id=b.id where m.user_id=$1', [req.user.id])).rows }));
+app.get('/v1/users', auth, requirePermission('users'), async (req, res) => {
+  const users = await pool.query('select id,email,display_name,role,disabled_at,created_at from users where organization_id=$1 order by created_at', [req.user.organization_id]);
+  res.json({ users: users.rows });
+});
+app.post('/v1/users', auth, requirePermission('users'), async (req, res) => {
+  const { email, password, displayName, role = 'seller', branchId } = req.body;
+  if (!email || !password || password.length < 8 || !displayName || !roles.has(role) || !branchId) return res.status(400).json({ error: 'INVALID_USER' });
+  const membership = await pool.query('select 1 from branches where id=$1 and organization_id=$2', [branchId, req.user.organization_id]);
+  if (!membership.rowCount) return res.status(400).json({ error: 'INVALID_BRANCH' });
+  try {
+    const user = (await pool.query('insert into users(organization_id,email,password_hash,display_name,role) values($1,$2,$3,$4,$5) returning id,email,display_name,role,created_at', [req.user.organization_id, email.toLowerCase(), await bcrypt.hash(password, 12), displayName, role])).rows[0];
+    await pool.query('insert into memberships(user_id,branch_id) values($1,$2)', [user.id, branchId]);
+    res.status(201).json({ user });
+  } catch (e) { res.status(409).json({ error: e.code === '23505' ? 'EMAIL_EXISTS' : 'USER_CREATE_FAILED' }); }
+});
+app.post('/v1/users/:id/disable', auth, requirePermission('users'), async (req, res) => {
+  if (req.params.id === req.user.id) return res.status(400).json({ error: 'CANNOT_DISABLE_SELF' });
+  const result = await pool.query('update users set disabled_at=coalesce(disabled_at, now()) where id=$1 and organization_id=$2 returning id,disabled_at', [req.params.id, req.user.organization_id]);
+  if (!result.rowCount) return res.status(404).json({ error: 'USER_NOT_FOUND' });
+  res.json({ user: result.rows[0] });
+});
 
 app.get('/v1/sync/pull', auth, requireBranch, async (req, res) => {
   const after = req.query.after || '1970-01-01T00:00:00Z';

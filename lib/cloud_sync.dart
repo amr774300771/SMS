@@ -58,11 +58,38 @@ class CloudSyncClient {
     return data;
   }
 
+  Future<Map<String, dynamic>> me() async {
+    _requireToken();
+    final response = await client.get(baseUri.resolve('/v1/me'), headers: _headers);
+    _check(response);
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> sell({required String branchId, required String cardId, String? clientId, String paymentMethod = 'credit', String? idempotencyKey}) async {
     _requireToken();
     final response = await client.post(baseUri.resolve('/v1/sales'), headers: _headers, body: jsonEncode({'branchId': branchId, 'cardId': cardId, 'clientId': clientId, 'paymentMethod': paymentMethod, 'idempotencyKey': idempotencyKey ?? const Uuid().v4()}));
     _check(response);
     return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> listUsers() async {
+    _requireToken();
+    final response = await client.get(baseUri.resolve('/v1/users'), headers: _headers);
+    _check(response);
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createUser({required String email, required String password, required String displayName, required String role, required String branchId}) async {
+    _requireToken();
+    final response = await client.post(baseUri.resolve('/v1/users'), headers: _headers, body: jsonEncode({'email': email, 'password': password, 'displayName': displayName, 'role': role, 'branchId': branchId}));
+    _check(response);
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<void> disableUser(String userId) async {
+    _requireToken();
+    final response = await client.post(baseUri.resolve('/v1/users/$userId/disable'), headers: _headers);
+    _check(response);
   }
 
   void _requireToken() { if (token == null) throw StateError('سجّل الدخول إلى الخادم أولاً'); }

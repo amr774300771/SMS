@@ -30,6 +30,7 @@ import 'whatsapp_utils.dart';
 import 'skeleton_widgets.dart';
 import 'report_metrics.dart';
 import 'cloud_sync_settings.dart';
+import 'design_system.dart';
 
 const emerald = Color(0xFF10B981),
     blue = Color(0xFF0284C7),
@@ -447,6 +448,12 @@ class HomePage extends StatelessWidget {
                       ],
                     ),
                   ),
+                  QaidiStatusPill(
+                    label: trigger['triggerEnabled'] == true ? 'نشط' : 'متوقف',
+                    color: trigger['triggerEnabled'] == true ? emerald : Colors.orange,
+                    icon: trigger['triggerEnabled'] == true ? Icons.check_circle_outline : Icons.pause_circle_outline,
+                  ),
+                  const SizedBox(width: 4),
                   IconButton(
                     onPressed: () => onOpen(5),
                     icon: const Icon(Icons.tune_rounded),
@@ -531,25 +538,10 @@ class HomePage extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 18),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'جاهزية النظام',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    '$readyCount/${readinessChecks.length}',
-                    style: const TextStyle(
-                      color: emerald,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
+              QaidiSectionHeader(
+                title: 'جاهزية النظام',
+                subtitle: 'حالة المكونات المحلية والخدمات الأساسية',
+                action: Text('$readyCount/${readinessChecks.length}', style: const TextStyle(color: emerald, fontWeight: FontWeight.bold)),
               ),
               const SizedBox(height: 8),
               Card(
