@@ -87,6 +87,12 @@ void main() {
     expect(find.text('سجل المبيعات'), findsOneWidget);
     expect(find.text('حذف'), findsOneWidget);
     expect(find.text('استعادة العميل'), findsNothing);
+    final menuLabels = tester
+        .widgetList<PopupMenuItem<String>>(find.byType(PopupMenuItem<String>))
+        .map((item) => (item.child as Text).data)
+        .toList();
+    expect(
+        menuLabels, ['تعديل', 'إضافة / تعديل دين يدوي', 'سجل المبيعات', 'حذف']);
   });
 
   testWidgets('empty inventory explains the next useful action',
