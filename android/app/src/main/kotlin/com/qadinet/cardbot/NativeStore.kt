@@ -868,7 +868,7 @@ object NativeStore {
             require(sourceId in ids && card.isNotEmpty() && !card.any { it.isWhitespace() }) { "الباقة أو رقم البطاقة غير صالح" }
             val source = stock.getValue(sourceId)
             require(source.count { it == card } == 1) { "البطاقة $card لم تعد ضمن المخزون المتاح؛ حدّث الشاشة وحاول مجدداً" }
-            require(!soldCards.contains(card)) { "لا يمكن تعديل بطاقة لها سجل بيع: $card" }
+            // نعدّل النسخة المتاحة في المخزون فقط؛ لا نغيّر أي سجل بيع تاريخي، بما في ذلك البطاقات المرتجعة.
             val uniqueKey = "$sourceId\u0000$card"
             require(touched.add(uniqueKey)) { "تم تحديد البطاقة نفسها أكثر من مرة" }
             when (action) {
