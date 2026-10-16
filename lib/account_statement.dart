@@ -834,8 +834,15 @@ class _AccountStatementPageState extends State<AccountStatementPage> {
   }
 
   Future<void> _openWhatsApp() async {
-    final phone = widget.phone.replaceAll(RegExp(r'\D'), '');
-    final uri = Uri.https('wa.me', '/$phone', {'text': _statementText()});
+    final uri = whatsappChatUri(widget.phone, message: _statementText());
+    if (uri == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('رقم العميل غير صالح لفتح WhatsApp.'),
+        ));
+      }
+      return;
+    }
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
         mounted) {
       ScaffoldMessenger.of(context)
@@ -888,13 +895,12 @@ class _AccountStatementPageState extends State<AccountStatementPage> {
         .replaceAll('{name}', clientName)
         .replaceAll('{phone}', widget.phone)
         .replaceAll('{amount}', _currentBalance.toString());
-    final digits = widget.phone.replaceAll(RegExp(r'\D'), '');
-    final whatsappNumber = normalizeWhatsAppNumber(widget.phone) ?? digits;
     try {
       if (channel == 'sms') {
         await NativeApi.instance.openSmsComposer(widget.phone, message);
       } else {
-        final uri = Uri.https('wa.me', '/$whatsappNumber', {'text': message});
+        final uri = whatsappChatUri(widget.phone, message: message);
+        if (uri == null) throw StateError('رقم العميل غير صالح لفتح WhatsApp');
         if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
           throw StateError('تعذر فتح واتساب');
         }

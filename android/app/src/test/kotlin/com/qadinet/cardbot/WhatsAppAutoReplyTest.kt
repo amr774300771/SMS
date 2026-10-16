@@ -96,11 +96,22 @@ class WhatsAppAutoReplyTest {
     }
 
     @Test
-    fun blankBigTextFallsBackToNonBlankNotificationText() {
+    fun notificationTextHasPriorityOverBigText() {
         val extras = Bundle().apply {
-            putCharSequence(Notification.EXTRA_BIG_TEXT, "  ")
+            putCharSequence(Notification.EXTRA_BIG_TEXT, "300")
             putCharSequence(Notification.EXTRA_TEXT, "500")
         }
+        assertEquals("500", WhatsAppNotificationListener.extractNotificationMessage(extras))
+    }
+
+    @Test
+    fun notificationMessageFallsBackToBigTextThenTitle() {
+        val extras = Bundle().apply {
+            putCharSequence(Notification.EXTRA_BIG_TEXT, "  300  ")
+            putCharSequence(Notification.EXTRA_TITLE, "500")
+        }
+        assertEquals("300", WhatsAppNotificationListener.extractNotificationMessage(extras))
+        extras.putCharSequence(Notification.EXTRA_BIG_TEXT, " ")
         assertEquals("500", WhatsAppNotificationListener.extractNotificationMessage(extras))
     }
 
@@ -127,5 +138,114 @@ class WhatsAppAutoReplyTest {
         )
         assertTrue(first != repeated)
         assertEquals(first, duplicateDelivery)
+    }
+
+    @Test
+    fun smsAddressNormalizationSupportsYemeniLocalAndInternationalForms() {
+        assertEquals("+967777123456", PhoneNumberNormalizer.toSmsAddress("777123456"))
+        assertEquals("+967777123456", PhoneNumberNormalizer.toSmsAddress("0777123456"))
+        assertEquals("+967777123456", PhoneNumberNormalizer.toSmsAddress("00967 777 123 456"))
+        assertEquals("+967777123456", PhoneNumberNormalizer.toSmsAddress("+٩٦٧ ٧٧٧ ١٢٣ ٤٥٦"))
+        assertNull(PhoneNumberNormalizer.toSmsAddress("12345"))
+    }
+
+    @Test
+    fun failedWhatsAppReplyRetryUsesTheAlreadySoldCard() {
+        NativeStore.initialize(context, defaults(autoReply = true))
+        NativeStore.addCards(context, "500", listOf("WA-CARD-ONCE", "WA-CARD-SECOND"))
+        val eventId = "stable-notification-event"
+
+        val first = NativeStore.processIncoming(
+            context,
+            "700000000",
+            "500",
+            channel = "whatsapp",
+            eventId = eventId,
+            whatsappReply = { false }
+        )
+        assertEquals(false, first)
+        assertEquals(1, (NativeStore.snapshot(context)["sales"] as List<*>).size)
+
+        val replies = mutableListOf<String>()
+        val retry = NativeStore.processIncoming(
+            context,
+            "700000000",
+            "500",
+            channel = "whatsapp",
+            eventId = eventId,
+            whatsappReply = {
+                replies.add(it)
+                true
+            }
+        )
+        val snapshot = NativeStore.snapshot(context)
+        assertEquals(true, retry)
+        assertEquals(1, (snapshot["sales"] as List<*>).size)
+        assertEquals(listOf("WA-CARD-SECOND"),
+            (snapshot["inventory"] as Map<*, *>) ["500"])
+        assertTrue(replies.single().contains("WA-CARD-ONCE"))
+        assertEquals("submitted",
+            ((snapshot["transactions"] as List<*>).single() as Map<*, *>)["whatsappStatus"])
+    }
+
+    @Test
+    fun mostSpecificKeywordWinsRegardlessOfPackagePriceOrder() {
+        NativeStore.initialize(context, defaults(autoReply = true).toMutableMap().apply {
+            put(
+                "packages.json",
+                """{"schemaVersion":1,"packages":[{"id":"300","price":300,"label":"300","keywords":["نت"]},{"id":"500","price":500,"label":"500","keywords":["نت 500"]}]}"""
+            )
+            put(
+                "permissions.json",
+                """{"global":{"allowAllClients":true,"allowedPackages":["300","500"],"maxDebt":50000,"maxDailyTransactions":50,"maxDailyAmount":100000},"clients":[]}"""
+            )
+        })
+        NativeStore.addCards(context, "300", listOf("BROAD-CARD"))
+        NativeStore.addCards(context, "500", listOf("SPECIFIC-CARD"))
+
+        NativeStore.processIncoming(
+            context,
+            "700000000",
+            "أريد نت 500",
+            channel = "whatsapp",
+            eventId = "specific-keyword-event",
+            whatsappReply = { true }
+        )
+
+        val sales = NativeStore.snapshot(context)["sales"] as List<*>
+        assertEquals(1, sales.size)
+        assertEquals("500", (sales.single() as Map<*, *>) ["packageId"])
+    }
+
+    @Test
+    fun equallySpecificPackageMatchesDoNotSellAnyCard() {
+        NativeStore.initialize(context, defaults(autoReply = true).toMutableMap().apply {
+            put(
+                "packages.json",
+                """{"schemaVersion":1,"packages":[{"id":"300","price":300,"label":"300","keywords":["طلب"]},{"id":"500","price":500,"label":"500","keywords":["طلب"]}]}"""
+            )
+            put(
+                "permissions.json",
+                """{"global":{"allowAllClients":true,"allowedPackages":["300","500"],"maxDebt":50000,"maxDailyTransactions":50,"maxDailyAmount":100000},"clients":[]}"""
+            )
+        })
+        NativeStore.addCards(context, "300", listOf("CARD-300"))
+        NativeStore.addCards(context, "500", listOf("CARD-500"))
+        val replies = mutableListOf<String>()
+
+        NativeStore.processIncoming(
+            context,
+            "700000000",
+            "طلب",
+            channel = "whatsapp",
+            eventId = "ambiguous-package-event",
+            whatsappReply = { replies.add(it); true }
+        )
+
+        val snapshot = NativeStore.snapshot(context)
+        assertTrue((snapshot["sales"] as List<*>).isEmpty())
+        assertEquals(listOf("CARD-300"), (snapshot["inventory"] as Map<*, *>) ["300"])
+        assertEquals(listOf("CARD-500"), (snapshot["inventory"] as Map<*, *>) ["500"])
+        assertTrue(replies.isEmpty())
     }
 }

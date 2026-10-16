@@ -1,4 +1,4 @@
-/// Normalizes a phone number for WhatsApp's wa.me and whatsapp:// URLs.
+/// Normalizes a phone number for WhatsApp's canonical wa.me URL.
 /// International numbers must include + or 00 (or already start with Yemen's
 /// 967 country code). Unprefixed Yemeni mobile numbers are assumed local.
 String? normalizeWhatsAppNumber(String raw) {
@@ -28,6 +28,17 @@ String? normalizeWhatsAppNumber(String raw) {
     return '967${digits.substring(1)}';
   }
   return null;
+}
+
+/// Builds the canonical HTTPS deep link that Android opens through ACTION_VIEW.
+Uri? whatsappChatUri(String raw, {String? message}) {
+  final number = normalizeWhatsAppNumber(raw);
+  if (number == null) return null;
+  return Uri.https(
+    'wa.me',
+    '/$number',
+    message == null || message.isEmpty ? null : {'text': message},
+  );
 }
 
 bool _validInternationalNumber(String digits) =>

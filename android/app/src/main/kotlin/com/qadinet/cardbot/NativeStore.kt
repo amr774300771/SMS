@@ -28,11 +28,18 @@ import javax.crypto.spec.SecretKeySpec
 /** Local serialized source of truth shared by the SMS receiver and Flutter UI. */
 object NativeStore {
     private val lock = Any()
+    private data class PackageMatch(
+        val item: JSONObject? = null,
+        val excluded: Boolean = false,
+        val ambiguous: Boolean = false
+    )
     private val fallbackPackageIds = setOf("500", "300", "3000", "200")
     private val packageIdPattern = Regex("^[A-Za-z0-9_-]{1,24}$")
     private val allowedConfigs = setOf("packages.json", "permissions.json", "trigger_config.json", "trusted_clients.json")
     private const val LEDGER_NAME = "transactions.json"
     private const val JOURNAL_NAME = ".pending_transaction.json"
+    private const val WHATSAPP_REPLY_LIMIT = 20
+    private const val WHATSAPP_REPLY_WINDOW_MS = 60L * 60 * 1000
 
     fun directory(context: Context): File = File(context.filesDir, "CardBot").apply { mkdirs() }
     private fun file(context: Context, name: String) = File(directory(context), name)
@@ -45,6 +52,7 @@ object NativeStore {
         recoverPendingTransaction(context)
         val hadLedger = file(context, LEDGER_NAME).exists()
         defaults.forEach { (name, content) -> if (!file(context, name).exists()) atomicWrite(file(context, name), content) }
+        sanitizeDiagnosticHistory(context)
         repairPackageConfig(context, defaults["packages.json"])
         packageIds(context).forEach { id -> if (!file(context, "cards_$id.txt").exists()) atomicWrite(file(context, "cards_$id.txt"), "") }
         listOf("debts.txt", "sales.log").forEach { name -> if (!file(context, name).exists()) atomicWrite(file(context, name), "") }
@@ -347,8 +355,17 @@ object NativeStore {
     private fun recordRequestEvent(context: Context, reason: String, phone: String, detail: String = "") {
         val trigger = json(context, "trigger_config.json", "{\"triggerEnabled\":true}")
         val events = trigger.optJSONArray("events") ?: JSONArray()
-        events.put(JSONObject().put("time", isoNow()).put("reason", reason).put("phone", phone).put("detail", detail.take(180)))
-        while (events.length() > 200) events.remove(0)
+        for (index in 0 until events.length()) {
+            events.optJSONObject(index)?.let { oldEvent ->
+                oldEvent.remove("phone")
+                if (oldEvent.has("detail")) {
+                    oldEvent.put("detail", redactDiagnosticNumbers(oldEvent.optString("detail")))
+                }
+            }
+        }
+        events.put(JSONObject().put("time", isoNow()).put("reason", reason)
+            .put("detail", redactDiagnosticNumbers(detail).take(180)))
+        while (events.length() > 20) events.remove(0)
         trigger.put("events", events)
         trigger.put("lastEventAt", isoNow())
         trigger.put("lastEventReason", reason)
@@ -358,13 +375,77 @@ object NativeStore {
     private fun recordSmsFailure(context: Context, phone: String, error: String) {
         val trigger = json(context, "trigger_config.json", "{\"errorCount\":0}")
         trigger.put("errorCount", trigger.optInt("errorCount", 0) + 1)
-        trigger.put("lastSmsError", error.take(250))
+        trigger.put("lastSmsError", "تعذر إرسال الرسالة؛ تحقق من أذونات SMS والشريحة.")
         trigger.put("lastSmsErrorAt", isoNow())
         val events = trigger.optJSONArray("events") ?: JSONArray()
-        events.put(JSONObject().put("time", isoNow()).put("reason", "sms_send_failed").put("phone", phone).put("detail", error.take(180)))
-        while (events.length() > 200) events.remove(0)
+        for (index in 0 until events.length()) {
+            events.optJSONObject(index)?.let { oldEvent ->
+                oldEvent.remove("phone")
+                if (oldEvent.has("detail")) {
+                    oldEvent.put("detail", redactDiagnosticNumbers(oldEvent.optString("detail")))
+                }
+            }
+        }
+        events.put(JSONObject().put("time", isoNow()).put("reason", "sms_send_failed").put("detail", "تعذر إرسال الرسالة؛ تحقق من أذونات SMS والشريحة."))
+        while (events.length() > 20) events.remove(0)
         trigger.put("events", events)
         atomicWrite(file(context, "trigger_config.json"), trigger.toString())
+    }
+
+    private fun redactDiagnosticNumbers(value: String): String = value.replace(
+        Regex("(?<![0-9٠-٩۰-۹])(?:\\+|00)?[0-9٠-٩۰-۹][0-9٠-٩۰-۹\\s()\\-]{6,}[0-9٠-٩۰-۹](?![0-9٠-٩۰-۹])"),
+        "[رقم مخفي]"
+    )
+
+    private fun sanitizeDiagnosticHistory(context: Context) {
+        val triggerFile = file(context, "trigger_config.json")
+        if (!triggerFile.exists()) return
+        val trigger = json(context, "trigger_config.json", "{}")
+        val events = trigger.optJSONArray("events") ?: JSONArray()
+        for (index in 0 until events.length()) {
+            events.optJSONObject(index)?.let { event ->
+                event.remove("phone")
+                if (event.has("detail")) {
+                    event.put("detail", redactDiagnosticNumbers(event.optString("detail")))
+                }
+            }
+        }
+        while (events.length() > 20) events.remove(0)
+        trigger.put("events", events)
+        if (trigger.has("lastSmsError")) {
+            trigger.put("lastSmsError", "تعذر إرسال الرسالة؛ تحقق من أذونات SMS والشريحة.")
+        }
+        atomicWrite(triggerFile, trigger.toString())
+    }
+
+    private fun sendWhatsAppReply(
+        context: Context,
+        phone: String,
+        message: String,
+        callback: (String) -> Boolean
+    ): Boolean {
+        val trigger = json(context, "trigger_config.json", "{}")
+        val now = System.currentTimeMillis()
+        val recent = JSONArray()
+        val stored = trigger.optJSONArray("whatsappReplyTimes") ?: JSONArray()
+        for (index in 0 until stored.length()) {
+            val timestamp = stored.optLong(index, 0L)
+            if (timestamp > 0L && now - timestamp in 0L..WHATSAPP_REPLY_WINDOW_MS) {
+                recent.put(timestamp)
+            }
+        }
+        if (recent.length() >= WHATSAPP_REPLY_LIMIT) {
+            trigger.put("whatsappReplyTimes", recent)
+            atomicWrite(file(context, "trigger_config.json"), trigger.toString())
+            recordRequestEvent(context, "whatsapp_rate_limited", phone, "تم بلوغ حد الردود المؤقت؛ ستُعاد المحاولة لاحقًا")
+            return false
+        }
+        recent.put(now)
+        trigger.put("whatsappReplyTimes", recent)
+        atomicWrite(file(context, "trigger_config.json"), trigger.toString())
+        val sent = try { callback(message) } catch (_: Exception) { false }
+        if (!sent) recordRequestEvent(context, "whatsapp_reply_failed", phone, "تعذر تنفيذ الرد من إشعار WhatsApp")
+        return sent
     }
 
     fun snapshot(context: Context): Map<String, Any?> = synchronized(lock) {
@@ -404,6 +485,7 @@ object NativeStore {
                     .put("paymentMethod", parts.getOrNull(5) ?: "credit")
                     .put("transactionId", transactionId)
                     .put("receiptConfirmedAt", transaction?.optString("receiptConfirmedAt", "") ?: "")
+                    .put("whatsappStatus", transaction?.optString("whatsappStatus", "") ?: "")
                     .put("returnedAt", transaction?.optString("returnedAt", "") ?: "")
                     .put("returnReason", transaction?.optString("returnReason", "") ?: ""))
             }
@@ -910,28 +992,36 @@ object NativeStore {
         } catch (_: Exception) { fallbackPackageIds }
     }
 
-    private fun findPackage(context: Context, message: String, phone: String): Pair<JSONObject?, Boolean> {
+    private fun findPackage(context: Context, message: String, phone: String): PackageMatch {
         val list = packages(context)
         val normalized = normalizeKeyword(message)
-        val candidates = (0 until list.length()).mapNotNull { list.optJSONObject(it) }.sortedByDescending { it.optInt("price") }
-        for (item in candidates) {
+        val matches = mutableListOf<Pair<JSONObject, String>>()
+        for (item in (0 until list.length()).mapNotNull { list.optJSONObject(it) }) {
             val words = item.optJSONArray("keywords") ?: JSONArray(item.optString("id"))
             for (i in 0 until words.length()) {
                 val word = normalizeKeyword(words.optString(i))
                 if (word.isEmpty()) continue
-                if (keywordMatches(normalized, word)) {
-                    val excludedPhones = item.optJSONArray("excludedPhones") ?: JSONArray()
-                    if ((0 until excludedPhones.length()).any { phoneKey(excludedPhones.optString(it)) == phoneKey(phone) }) return null to true
-                    val excludedWords = item.optJSONArray("excludedKeywords") ?: JSONArray()
-                    if ((0 until excludedWords.length()).any { index ->
-                            val excluded = normalizeKeyword(excludedWords.optString(index))
-                            excluded.isNotEmpty() && keywordMatches(normalized, excluded)
-                        }) return null to true
-                    return item to false
-                }
+                if (keywordMatches(normalized, word)) matches.add(item to word)
             }
         }
-        return null to false
+        if (matches.isEmpty()) return PackageMatch()
+
+        val mostSpecificLength = matches.maxOf { it.second.length }
+        val strongest = matches.filter { it.second.length == mostSpecificLength }
+            .distinctBy { it.first.optString("id") }
+        if (strongest.size != 1) return PackageMatch(ambiguous = true)
+
+        val item = strongest.single().first
+        val excludedPhones = item.optJSONArray("excludedPhones") ?: JSONArray()
+        if ((0 until excludedPhones.length()).any {
+                phoneKey(excludedPhones.optString(it)) == phoneKey(phone)
+            }) return PackageMatch(excluded = true)
+        val excludedWords = item.optJSONArray("excludedKeywords") ?: JSONArray()
+        if ((0 until excludedWords.length()).any { index ->
+                val excluded = normalizeKeyword(excludedWords.optString(index))
+                excluded.isNotEmpty() && keywordMatches(normalized, excluded)
+            }) return PackageMatch(excluded = true)
+        return PackageMatch(item = item)
     }
 
     private fun buildDebtCache(balances: Map<String, Long>, entries: JSONArray): String = debtText(balances, entries)
@@ -965,6 +1055,7 @@ object NativeStore {
             reference = reference,
             note = "صرف كرت باقة $id"
         )
+        if (replyViaWhatsApp != null) transaction.put("whatsappStatus", "pending")
         entries.put(transaction)
         val balances = balancesFrom(entries)
         val oldTrigger = json(context, "trigger_config.json", "{\"triggerEnabled\":true,\"processedCount\":0,\"totalSalesCount\":0}")
@@ -992,13 +1083,19 @@ object NativeStore {
             try { sendSms(context, phone, reply); smsSent = true }
             catch (e: Exception) {
                 smsSent = false
-                smsError = e.message.orEmpty()
+                smsError = "تعذر إرسال SMS؛ تحقق من الأذونات والشريحة."
                 recordSmsFailure(context, phone, smsError)
             }
         }
         if (replyViaWhatsApp != null) {
-            whatsappSent = try { replyViaWhatsApp(reply) } catch (_: Exception) { false }
-            if (whatsappSent == false) recordRequestEvent(context, "whatsapp_reply_failed", phone, "تم تسجيل البيع لكن تعذر الرد من إشعار واتساب")
+            whatsappSent = sendWhatsAppReply(context, phone, reply, replyViaWhatsApp)
+            transaction.put("whatsappStatus", if (whatsappSent == true) "submitted" else "failed")
+            if (whatsappSent == false) {
+                transaction.put("whatsappError", "تم تسجيل البيع لكن تعذر إرسال الرد؛ أُبقيت البطاقة نفسها لإعادة المحاولة.")
+            } else {
+                transaction.remove("whatsappError")
+            }
+            atomicWrite(file(context, LEDGER_NAME), ledgerContent(entries))
         }
         CardBotService.refresh(context)
         val event = when {
@@ -1285,36 +1382,97 @@ object NativeStore {
         }
     }
 
+    private fun retryExistingWhatsAppSale(
+        context: Context,
+        eventId: String,
+        phone: String,
+        callback: (String) -> Boolean
+    ): Boolean? {
+        val entries = transactions(context)
+        val transaction = (0 until entries.length()).mapNotNull { entries.optJSONObject(it) }
+            .firstOrNull {
+                it.optString("reference") == eventId &&
+                    it.optString("type").startsWith("sale_")
+            } ?: return null
+        val transactionId = transaction.optString("id")
+        val saleParts = text(context, "sales.log").lineSequence()
+            .firstOrNull { it.split(" | ").getOrNull(7) == transactionId }
+            ?.split(" | ")
+        val card = saleParts?.getOrNull(3).orEmpty()
+        if (card.isBlank()) {
+            recordRequestEvent(context, "whatsapp_reply_failed", phone, "تعذر استعادة إيصال البيع لإعادة إرسال الرد")
+            return true // لا نكرر الصرف إذا تعذر استرجاع نص الإيصال.
+        }
+        val packageId = transaction.optString("packageId")
+        val price = transaction.optLong("amount").toString()
+        val balanceAfter = saleParts?.getOrNull(4).orEmpty()
+        val name = transaction.optString("clientName").ifBlank { "عميلنا" }
+        val reply = renderTemplate(
+            context,
+            "success",
+            "أهلاً {name}،\nهذا رد تلقائي لشبكة القاضي نت\nكرتك: {card} | فئة: {price} | شبكة: القاضي نت\nالمتبقي عليك: {debt} ر.ي",
+            mapOf(
+                "name" to name,
+                "card" to card,
+                "price" to price,
+                "package" to packageId,
+                "debt" to balanceAfter,
+                "phone" to phone,
+                "reason" to ""
+            )
+        )
+        val sent = sendWhatsAppReply(context, phone, reply, callback)
+        transaction.put("whatsappStatus", if (sent) "submitted" else "failed")
+        if (sent) transaction.remove("whatsappError")
+        else transaction.put("whatsappError", "تم تسجيل البيع؛ تعذر إرسال الرد، وستعاد المحاولة دون صرف كرت آخر.")
+        atomicWrite(file(context, LEDGER_NAME), ledgerContent(entries))
+        if (sent) recordRequestEvent(context, "whatsapp_reply_recovered", phone, "أُعيد إرسال إيصال البيع المسجل")
+        return sent
+    }
+
     fun processIncoming(
         context: Context,
         phone: String,
         message: String,
         channel: String = "sms",
+        eventId: String = "",
         whatsappReply: ((String) -> Boolean)? = null
-    ) = synchronized(lock) {
+    ): Boolean = synchronized(lock) {
         val trigger = json(context, "trigger_config.json", "{\"triggerEnabled\":true}")
-        if (!trigger.optBoolean("triggerEnabled", true)) return
+        if (!trigger.optBoolean("triggerEnabled", true)) return@synchronized true
         val viaWhatsApp = channel == "whatsapp"
-        if (viaWhatsApp && (!trigger.optBoolean("whatsappAutoReplyEnabled", false) || whatsappReply == null)) return
+        if (viaWhatsApp && (!trigger.optBoolean("whatsappAutoReplyEnabled", false) || whatsappReply == null)) {
+            return@synchronized true
+        }
         val name = customerName(context, phone)
         val deliverReply: (String) -> Boolean = { response ->
             if (viaWhatsApp) {
-                val sent = try { whatsappReply?.invoke(response) == true } catch (_: Exception) { false }
-                if (!sent) recordRequestEvent(context, "whatsapp_reply_failed", phone, "تعذر الرد من إشعار واتساب")
-                sent
+                sendWhatsAppReply(context, phone, response, whatsappReply!!)
             } else {
                 try { sendSms(context, phone, response); true }
                 catch (e: Exception) {
                     recordSmsFailure(context, phone, e.message.orEmpty())
-                    Log.e("CardBot", "Could not send rejection SMS", e)
+                    Log.e("CardBot", "Could not send rejection SMS (${e.javaClass.simpleName})")
                     false
                 }
             }
         }
-        val (item, excluded) = findPackage(context, message, phone)
+
+        if (viaWhatsApp && eventId.isNotBlank()) {
+            retryExistingWhatsAppSale(context, eventId, phone, whatsappReply!!)?.let {
+                return@synchronized it
+            }
+        }
+
+        val match = findPackage(context, message, phone)
+        if (match.ambiguous) {
+            recordRequestEvent(context, "ambiguous_keyword", phone, "تطابق الطلب مع أكثر من باقة بالدرجة نفسها")
+            return@synchronized true
+        }
+        val item = match.item
         if (item == null) {
-            recordRequestEvent(context, if (excluded) "excluded" else "unmatched_keyword", phone)
-            return
+            recordRequestEvent(context, if (match.excluded) "excluded" else "unmatched_keyword", phone)
+            return@synchronized true
         }
         val id = item.optString("id")
         val price = effectivePrice(context, phone, item)
@@ -1322,15 +1480,25 @@ object NativeStore {
         if (denial != null) {
             recordRequestEvent(context, "rejected", phone, denial)
             val response = renderTemplate(context, "rejected", "{reason}", mapOf("name" to name, "phone" to phone, "reason" to denial, "package" to id, "price" to price.toString(), "card" to "", "debt" to currentBalance(context, phone).toString()))
-            deliverReply(response)
-            return
+            return@synchronized deliverReply(response)
         }
-        val result = recordSale(context, id, price, phone, name, !viaWhatsApp, "credit", replyViaWhatsApp = if (viaWhatsApp) whatsappReply else null)
-        if (result["ok"] != true) {
-            recordRequestEvent(context, "out_of_stock", phone, "باقة $id")
-            val response = renderTemplate(context, "outOfStock", "{reason}", mapOf("name" to name, "phone" to phone, "reason" to result["message"].toString(), "package" to id, "price" to price.toString(), "card" to "", "debt" to currentBalance(context, phone).toString()))
-            deliverReply(response)
+        val result = recordSale(
+            context,
+            id,
+            price,
+            phone,
+            name,
+            !viaWhatsApp,
+            "credit",
+            reference = if (viaWhatsApp) eventId else "",
+            replyViaWhatsApp = if (viaWhatsApp) whatsappReply else null
+        )
+        if (result["ok"] == true) {
+            return@synchronized result["whatsappSent"] != false
         }
+        recordRequestEvent(context, "out_of_stock", phone, "باقة $id")
+        val response = renderTemplate(context, "outOfStock", "{reason}", mapOf("name" to name, "phone" to phone, "reason" to result["message"].toString(), "package" to id, "price" to price.toString(), "card" to "", "debt" to currentBalance(context, phone).toString()))
+        deliverReply(response)
     }
 
     fun sendSms(context: Context, phone: String, message: String) {

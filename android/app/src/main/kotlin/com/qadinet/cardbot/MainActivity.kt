@@ -137,9 +137,10 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
                     "openSmsComposer" -> {
-                        val phone = call.argument<String>("phone")?.trim().orEmpty()
+                        val rawPhone = call.argument<String>("phone")?.trim().orEmpty()
                         val message = call.argument<String>("message").orEmpty()
-                        require(phone.isNotBlank()) { "رقم الهاتف فارغ" }
+                        val phone = PhoneNumberNormalizer.toSmsAddress(rawPhone)
+                            ?: throw IllegalArgumentException("رقم الهاتف غير صالح؛ أدخل رقماً يمنياً أو دولياً صحيحاً")
                         require(message.isNotBlank()) { "نص الرسالة فارغ" }
                         val intent = Intent(Intent.ACTION_SENDTO).apply {
                             data = Uri.fromParts("smsto", phone, null)

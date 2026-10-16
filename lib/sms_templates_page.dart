@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'native_api.dart';
+import 'whatsapp_utils.dart';
 
 class SmsTemplatesPage extends StatefulWidget {
   final Map<String, dynamic> data;
@@ -189,11 +190,8 @@ class _SmsTemplatesPageState extends State<SmsTemplatesPage> {
       if (channel == 'sms') {
         await NativeApi.instance.openSmsComposer(details.$1, message);
       } else {
-        final uri = Uri.https(
-          'wa.me',
-          '/${details.$1.replaceAll(RegExp(r'\D'), '')}',
-          {'text': message},
-        );
+        final uri = whatsappChatUri(details.$1, message: message);
+        if (uri == null) throw StateError('رقم العميل غير صالح لفتح WhatsApp');
         if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
           throw StateError('تعذر فتح واتساب');
         }
